@@ -1,0 +1,40 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body {{if .HasRoom}}data-room-code="{{.Room.Code}}"{{end}}>
+  <header class="topbar">
+    <h1><a href="/">❄️ Snowflakes</a></h1>
+  </header>
+
+  {{if .HasRoom}}
+    <main id="room-root">{{template "room_inner" .Room}}</main>
+  {{else}}
+    <main class="landing">
+      <section class="panel">
+        <h2>Create room</h2>
+        <form method="post" action="/rooms">
+          <label>Name <input type="text" name="name" required></label>
+          <button type="submit">Create room</button>
+        </form>
+      </section>
+      <section class="panel">
+        <h2>Join room</h2>
+        <form method="post" action="/rooms/join">
+          <label>Room code <input type="text" name="code" required></label>
+          <label>Name <input type="text" name="name" required></label>
+          <button type="submit">Join room</button>
+        </form>
+      </section>
+    </main>
+  {{end}}
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}
