@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestApp(t *testing.T) *App {
@@ -57,7 +58,14 @@ func TestRoomPageAndFragmentRender(t *testing.T) {
 		t.Fatalf("expected room page status %d, got %d", http.StatusOK, pageRR.Code)
 	}
 	pageBody := pageRR.Body.String()
-	for _, want := range []string{"id=\"room-root\"", "data-room-code=\"" + room.Code + "\"", "You are <strong>Alice</strong>", "Room " + room.Code} {
+	for _, want := range []string{
+		"id=\"room-root\"",
+		"data-room-code=\"" + room.Code + "\"",
+		"You are <strong>Alice</strong>",
+		"Room " + room.Code,
+		"data-copy-text=\"http://example.com/rooms/" + room.Code + "\"",
+		"Copy link",
+	} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("expected room page to contain %q, got %q", want, pageBody)
 		}
@@ -75,7 +83,7 @@ func TestRoomPageAndFragmentRender(t *testing.T) {
 	if strings.Contains(fragmentBody, "<!doctype html>") {
 		t.Fatalf("fragment should not contain full document, got %q", fragmentBody)
 	}
-	for _, want := range []string{"class=\"room-shell\"", "Room " + room.Code, "No active round yet."} {
+	for _, want := range []string{"class=\"room-shell\"", "Room " + room.Code, "Copy link", "No active round yet."} {
 		if !strings.Contains(fragmentBody, want) {
 			t.Fatalf("expected fragment to contain %q, got %q", want, fragmentBody)
 		}
@@ -130,7 +138,43 @@ func TestStaticAssetServed(t *testing.T) {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "snowflakesRefreshRoom") {
-		t.Fatalf("expected JS asset body, got %q", body)
+	for _, want := range []string{"snowflakesRefreshRoom", "snowflakes_player_name", "execCommand('copy')", "Copy this room link:"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected JS asset body to contain %q, got %q", want, body)
+		}
+	}
+}
+
+func TestStartActionReturnsAndStartsRound(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom("creator-token", "Alice")
+	room.mu.Lock()
+	room.join("bob-token", "Bob")
+	room.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/rooms/"+room.Code+"/actions/start", nil)
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
+	req.Header.Set("X-Requested-With", "fetch")
+	rr := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		app.Handler().ServeHTTP(rr, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("start action timed out")
+	}
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
+	}
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	if room.Game == nil || room.Game.Status != GameRunning || room.Game.CurrentRound == nil {
+		t.Fatalf("expected running game with active round, got %#v", room.Game)
 	}
 }

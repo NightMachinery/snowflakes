@@ -50,7 +50,7 @@ templ roomInner(view RoomView) {
 		<div class="room-header panel">
 			<div>
 				<h2>Room { view.Code }</h2>
-				<p>Share: <a href={ view.PublicURL }>{ view.PublicURL }</a></p>
+				<p>Share: <a href={ view.PublicURL }>{ view.PublicURL }</a> <button type="button" data-copy-text={ view.PublicURL }>Copy link</button></p>
 				<p>Status: { view.Status } · Won cards: { itoa(view.Won) } · Remaining cards: { itoa(view.RemainingCards) }</p>
 			</div>
 			<div>

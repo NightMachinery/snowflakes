@@ -418,11 +418,14 @@ func (a *App) roomPacks(room *Room) []WordPack {
 
 func (a *App) resolvePack(room *Room, name string) (WordPack, bool) {
 	room.mu.RLock()
+	defer room.mu.RUnlock()
+	return a.resolvePackLocked(room, name)
+}
+
+func (a *App) resolvePackLocked(room *Room, name string) (WordPack, bool) {
 	if pack, ok := room.CustomPacks[name]; ok {
-		room.mu.RUnlock()
 		return pack, true
 	}
-	room.mu.RUnlock()
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	pack, ok := a.packs[name]

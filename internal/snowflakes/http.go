@@ -167,7 +167,7 @@ func (a *App) handleRoomAction(w http.ResponseWriter, r *http.Request, room *Roo
 	case "settings":
 		a.updateSettings(room, token, r)
 	case "start":
-		pack, ok := a.resolvePack(room, room.Settings.SelectedPack)
+		pack, ok := a.resolvePackLocked(room, room.Settings.SelectedPack)
 		if !ok {
 			room.setFlash("selected pack was not found")
 			return
