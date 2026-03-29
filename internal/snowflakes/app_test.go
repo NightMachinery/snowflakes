@@ -49,3 +49,129 @@ func TestResolveRoundWrongBurnsExtraCard(t *testing.T) {
 		t.Fatalf("expected current index 2, got %d", room.Game.CurrentIndex)
 	}
 }
+
+func newPermissionTestRoom() *Room {
+	room := &Room{
+		Code: "ABCDE",
+		Participants: map[string]*Participant{
+			"a": {Token: "a", Name: "Alice", Role: RolePlayer, Admin: true, Creator: true},
+			"b": {Token: "b", Name: "Bob", Role: RolePlayer},
+		},
+		Order:       []string{"a", "b"},
+		Settings:    defaultRoomSettings(),
+		CustomPacks: map[string]WordPack{},
+		Game: &Game{
+			Status:       GameRunning,
+			CurrentIndex: 0,
+			CurrentRound: &Round{
+				Phase:         PhaseWordSelection,
+				Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
+				TargetIndex:   1,
+				TargetWord:    "Pear",
+				VotesByToken:  map[string]int{},
+				Clues:         map[string]ClueSubmission{},
+				ManualInvalid: map[string]bool{},
+				Guesses:       map[string]string{},
+				PassByToken:   map[string]bool{},
+			},
+		},
+	}
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+	return room
+}
+
+func newPermissionTestApp() *App {
+	return &App{
+		cfg:   Config{PublicURL: "http://example.com"},
+		rooms: map[string]*Room{},
+		packs: map[string]WordPack{},
+	}
+}
+
+func TestAdminGuesserLosesHiddenInfoAndRoundControls(t *testing.T) {
+	room := newPermissionTestRoom()
+	view := newPermissionTestApp().buildRoomView(room, "a")
+
+	if !view.IsAdmin {
+		t.Fatal("expected creator to remain a real admin")
+	}
+	if view.Round == nil || !view.Round.ActiveGuesser {
+		t.Fatalf("expected round view with active guesser, got %#v", view.Round)
+	}
+	if view.Round.CanManageRound {
+		t.Fatal("did not expect active admin guesser to manage the round")
+	}
+	if view.Round.CanSeeTarget {
+		t.Fatal("did not expect active admin guesser to see target word")
+	}
+	if view.Round.CanSeeChoiceWords {
+		t.Fatal("did not expect active admin guesser to see choice words")
+	}
+	if len(view.Round.RoundControllers) != 1 || view.Round.RoundControllers[0] != "Bob" {
+		t.Fatalf("expected Bob to be the temporary round controller, got %#v", view.Round.RoundControllers)
+	}
+}
+
+func TestTemporaryRoundControllerCanManageRound(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Settings.WordSelectionMode = SelectionPlayerVote
+	room.Game.CurrentRound.TargetIndex = 0
+	room.Game.CurrentRound.TargetWord = ""
+
+	if err := room.finalizeVotedWord("a", 0); err == nil {
+		t.Fatal("expected active admin guesser to be blocked from finalizing the round word")
+	}
+	if err := room.finalizeVotedWord("b", 0); err != nil {
+		t.Fatalf("expected temporary round controller to finalize the round word: %v", err)
+	}
+	if room.Game.CurrentRound.Phase != PhaseClueEntry {
+		t.Fatalf("expected round to advance to clue entry, got %s", room.Game.CurrentRound.Phase)
+	}
+	if room.Game.CurrentRound.TargetWord != "Apple" {
+		t.Fatalf("expected target word to be finalized, got %q", room.Game.CurrentRound.TargetWord)
+	}
+}
+
+func TestAdminGuesserKeepsSafeAdminControls(t *testing.T) {
+	room := newPermissionTestRoom()
+
+	if err := room.setParticipantRole("a", "b", RoleObserver); err != nil {
+		t.Fatalf("expected active admin guesser to retain safe admin controls: %v", err)
+	}
+	if room.Participants["b"].PendingRole == nil || *room.Participants["b"].PendingRole != RoleObserver {
+		t.Fatalf("expected pending observer role for Bob, got %#v", room.Participants["b"].PendingRole)
+	}
+}
+
+func TestNonGuessingAdminKeepsRoundControlsWithoutTemporaryAssignment(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Participants["b"].Admin = true
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+
+	if room.Game.CurrentRound.TemporaryRoundControllerToken != "" {
+		t.Fatalf("did not expect temporary round controller when a non-guessing admin exists, got %q", room.Game.CurrentRound.TemporaryRoundControllerToken)
+	}
+	view := newPermissionTestApp().buildRoomView(room, "b")
+	if view.Round == nil || !view.Round.CanManageRound {
+		t.Fatalf("expected non-guessing admin to manage the round, got %#v", view.Round)
+	}
+}
+
+func TestGuesserCardPoolOnlyVisibleDuringGuessPhaseWhenEnabled(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Settings.ShowCardPoolToGuessers = true
+
+	view := newPermissionTestApp().buildRoomView(room, "a")
+	if view.Round == nil {
+		t.Fatal("expected round view")
+	}
+	if view.Round.CanSeeCardPool {
+		t.Fatal("did not expect guesser to see answer bank during word selection")
+	}
+
+	room.Game.CurrentRound.Phase = PhaseGuessEntry
+	view = newPermissionTestApp().buildRoomView(room, "a")
+	if !view.Round.CanSeeCardPool {
+		t.Fatal("expected guesser to see answer bank during guess phase")
+	}
+}

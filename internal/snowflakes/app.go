@@ -152,16 +152,17 @@ type ClueSubmission struct {
 }
 
 type Round struct {
-	Phase         Phase
-	Card          RoundCard
-	TargetIndex   int
-	TargetWord    string
-	VotesByToken  map[string]int
-	Clues         map[string]ClueSubmission
-	ManualInvalid map[string]bool
-	Guesses       map[string]string
-	PassByToken   map[string]bool
-	Result        string
+	Phase                         Phase
+	Card                          RoundCard
+	TargetIndex                   int
+	TargetWord                    string
+	TemporaryRoundControllerToken string
+	VotesByToken                  map[string]int
+	Clues                         map[string]ClueSubmission
+	ManualInvalid                 map[string]bool
+	Guesses                       map[string]string
+	PassByToken                   map[string]bool
+	Result                        string
 }
 
 type Game struct {
@@ -505,6 +506,79 @@ func (r *Room) eligibleCluegivers(round *Round) []string {
 	return out
 }
 
+func (r *Room) isActiveGuesser(round *Round, token string) bool {
+	if token == "" {
+		return false
+	}
+	return slices.Contains(r.activeGuessers(round), token)
+}
+
+func (r *Room) nonGuessingAdmins(round *Round) []string {
+	guessers := map[string]struct{}{}
+	for _, token := range r.activeGuessers(round) {
+		guessers[token] = struct{}{}
+	}
+	out := make([]string, 0)
+	for token, participant := range r.Participants {
+		if participant == nil || !participant.Admin {
+			continue
+		}
+		if _, ok := guessers[token]; ok {
+			continue
+		}
+		out = append(out, token)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(r.Participants[out[i]].Name))
+		right := strings.ToLower(strings.TrimSpace(r.Participants[out[j]].Name))
+		if left == right {
+			return out[i] < out[j]
+		}
+		return left < right
+	})
+	return out
+}
+
+func (r *Room) assignTemporaryRoundController(round *Round) {
+	if round == nil {
+		return
+	}
+	round.TemporaryRoundControllerToken = ""
+	if len(r.nonGuessingAdmins(round)) > 0 {
+		return
+	}
+	cluegivers := r.eligibleCluegivers(round)
+	if len(cluegivers) > 0 {
+		round.TemporaryRoundControllerToken = cluegivers[0]
+	}
+}
+
+func (r *Room) roundControllers(round *Round) []string {
+	if round == nil {
+		return nil
+	}
+	if admins := r.nonGuessingAdmins(round); len(admins) > 0 {
+		return admins
+	}
+	if round.TemporaryRoundControllerToken != "" {
+		return []string{round.TemporaryRoundControllerToken}
+	}
+	return nil
+}
+
+func (r *Room) canManageRound(round *Round, token string) bool {
+	if round == nil || token == "" {
+		return false
+	}
+	if r.isActiveGuesser(round, token) {
+		return false
+	}
+	if participant := r.Participants[token]; participant != nil && participant.Admin {
+		return true
+	}
+	return round.TemporaryRoundControllerToken == token
+}
+
 func (r *Room) applyPendingRoles() {
 	for _, p := range r.Participants {
 		if p.PendingRole != nil {
@@ -581,6 +655,7 @@ func (r *Room) setupRound() error {
 		Guesses:       map[string]string{},
 		PassByToken:   map[string]bool{},
 	}
+	r.assignTemporaryRoundController(r.Game.CurrentRound)
 	r.Game.Status = GameRunning
 	return nil
 }
@@ -626,11 +701,10 @@ func (r *Room) castVote(token string, idx int) error {
 }
 
 func (r *Room) finalizeVotedWord(requester string, idx int) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseWordSelection || r.Settings.WordSelectionMode != SelectionPlayerVote {
 		return errors.New("not in player vote mode")
 	}
@@ -679,11 +753,10 @@ func (r *Room) allCluesSubmitted(round *Round) bool {
 }
 
 func (r *Room) advanceToReview(requester string) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseClueEntry {
 		return errors.New("not in clue entry")
 	}
@@ -695,11 +768,10 @@ func (r *Room) advanceToReview(requester string) error {
 }
 
 func (r *Room) toggleManualInvalid(requester, key string) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseClueReview {
 		return errors.New("not in clue review")
 	}
@@ -711,11 +783,10 @@ func (r *Room) toggleManualInvalid(requester, key string) error {
 }
 
 func (r *Room) advanceToGuess(requester string) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseClueReview {
 		return errors.New("not in clue review")
 	}
@@ -797,10 +868,6 @@ func (r *Room) resolveRound(kind string) error {
 }
 
 func (r *Room) nextRound(requester string) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	if r.Game == nil {
 		return errors.New("game not started")
 	}
@@ -808,6 +875,9 @@ func (r *Room) nextRound(requester string) error {
 		return errors.New("game is finished")
 	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseResolved {
 		return errors.New("current round is not resolved")
 	}
@@ -815,11 +885,10 @@ func (r *Room) nextRound(requester string) error {
 }
 
 func (r *Room) adminResolve(requester, kind string) error {
-	p := r.Participants[requester]
-	if p == nil || !p.Admin {
-		return errors.New("admin required")
-	}
 	round := r.round()
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
 	if round == nil || round.Phase != PhaseGuessEntry {
 		return errors.New("not in guess phase")
 	}

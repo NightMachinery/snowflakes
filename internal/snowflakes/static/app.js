@@ -127,14 +127,30 @@
   if (!root) return;
 
   let inflight = false;
+  function captureOpenDetails(scope) {
+    return Array.from((scope || document).querySelectorAll('details[data-preserve-open]'))
+      .filter((detail) => detail.open)
+      .map((detail) => detail.dataset.preserveOpen)
+      .filter(Boolean);
+  }
+
+  function restoreOpenDetails(scope, keys) {
+    const keepOpen = new Set(keys || []);
+    for (const detail of (scope || document).querySelectorAll('details[data-preserve-open]')) {
+      detail.open = keepOpen.has(detail.dataset.preserveOpen);
+    }
+  }
+
   window.snowflakesRefreshRoom = async function () {
     if (inflight) return;
     inflight = true;
     try {
+      const openDetails = captureOpenDetails(root);
       const response = await fetch(`/rooms/${code}/fragment`, {credentials: 'same-origin'});
       if (response.ok) {
         root.innerHTML = await response.text();
         hydratePlayerNames(root);
+        restoreOpenDetails(root, openDetails);
       }
     } finally {
       inflight = false;
