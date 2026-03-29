@@ -1,3 +1,4 @@
 /self-host
 /.self-host
 /snowflakes
+/internal/snowflakes/*_templ.go

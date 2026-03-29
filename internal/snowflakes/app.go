@@ -6,7 +6,6 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"io/fs"
 	mrand "math/rand"
@@ -21,7 +20,7 @@ import (
 	"unicode"
 )
 
-//go:embed templates/*.html static/* wordpacks/*
+//go:embed static/* wordpacks/*
 var embeddedFiles embed.FS
 
 type Config struct {
@@ -188,24 +187,15 @@ type Room struct {
 }
 
 type App struct {
-	cfg       Config
-	templates *template.Template
-	static    http.Handler
-	mu        sync.RWMutex
-	rooms     map[string]*Room
-	packs     map[string]WordPack
-	rand      *mrand.Rand
+	cfg    Config
+	static http.Handler
+	mu     sync.RWMutex
+	rooms  map[string]*Room
+	packs  map[string]WordPack
+	rand   *mrand.Rand
 }
 
 func NewApp(cfg Config) (*App, error) {
-	tpls, err := template.New("all").Funcs(template.FuncMap{
-		"join":     strings.Join,
-		"contains": strings.Contains,
-	}).ParseFS(embeddedFiles, "templates/*.html")
-	if err != nil {
-		return nil, err
-	}
-
 	staticFS, err := fs.Sub(embeddedFiles, "static")
 	if err != nil {
 		return nil, err
@@ -217,12 +207,11 @@ func NewApp(cfg Config) (*App, error) {
 	}
 
 	return &App{
-		cfg:       cfg,
-		templates: tpls,
-		static:    http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))),
-		rooms:     map[string]*Room{},
-		packs:     packs,
-		rand:      mrand.New(mrand.NewSource(seedMathRand())),
+		cfg:    cfg,
+		static: http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))),
+		rooms:  map[string]*Room{},
+		packs:  packs,
+		rand:   mrand.New(mrand.NewSource(seedMathRand())),
 	}, nil
 }
 

@@ -1,10 +1,11 @@
 # Self-hosting Snowflakes
 
 ## Requirements
-- Go
-- tmux
-- Caddy
-- python3
+- Go 1.25 toolchain support via the standard `go` command (`go` may auto-download Go 1.25 on first build)
+- `templ`
+- `tmux`
+- `Caddy`
+- `python3`
 - a writable `~/Caddyfile`
 
 ## Default URL and runtime
@@ -30,6 +31,7 @@ export ALL_PROXY=http://127.0.0.1:20808 all_proxy=http://127.0.0.1:20808 http_pr
 ```
 
 ### `setup`
+- runs `templ generate -path internal/snowflakes`
 - builds the current local checkout
 - writes runtime env/state files
 - adds or replaces the managed `Snowflakes` block in `~/Caddyfile`
@@ -37,6 +39,7 @@ export ALL_PROXY=http://127.0.0.1:20808 all_proxy=http://127.0.0.1:20808 http_pr
 - starts the app in tmux
 
 ### `redeploy`
+- reruns `templ generate -path internal/snowflakes`
 - rebuilds the current local checkout
 - rewrites the managed Caddy block if a new URL is provided
 - reloads Caddy
@@ -52,3 +55,4 @@ export ALL_PROXY=http://127.0.0.1:20808 all_proxy=http://127.0.0.1:20808 http_pr
 - URLs must be host-only (`http://host` or `https://host`). Path prefixes are not supported.
 - No Docker is used.
 - `redeploy` deploys the latest **local** changes; it does not fetch or pull anything.
+- Generated `templ` Go files are not committed; local builds and deploys generate them on demand.

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/a-h/templ"
 )
 
 type PageData struct {
@@ -107,11 +109,12 @@ type GuessView struct {
 	Passed     bool
 }
 
-func (a *App) renderTemplate(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := a.templates.ExecuteTemplate(w, name, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+func (a *App) renderComponent(w http.ResponseWriter, r *http.Request, component templ.Component) {
+	templ.Handler(component, templ.WithErrorHandler(func(_ *http.Request, err error) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		})
+	})).ServeHTTP(w, r)
 }
 
 func (a *App) buildRoomView(room *Room, viewerToken string) RoomView {
@@ -287,6 +290,26 @@ func slicesContains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func itoa(value int) string {
+	return strconv.Itoa(value)
+}
+
+func commaSeparated(values []string) string {
+	return strings.Join(values, ", ")
+}
+
+func roomPath(code string) string {
+	return "/rooms/" + code
+}
+
+func roomActionPath(code, action string) string {
+	return roomPath(code) + "/actions/" + action
+}
+
+func roomPacksPath(code string) string {
+	return roomPath(code) + "/packs/upload"
 }
 
 func min(a, b int) int {

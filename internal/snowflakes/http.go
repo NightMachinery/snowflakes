@@ -26,7 +26,7 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := ensureAuthToken(w, r)
-	a.renderTemplate(w, "layout", PageData{Title: "Snowflakes", Token: token})
+	a.renderComponent(w, r, page(PageData{Title: "Snowflakes", Token: token}))
 }
 
 func (a *App) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
@@ -109,12 +109,12 @@ func (a *App) handleRoomRoutes(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleRoomPage(w http.ResponseWriter, r *http.Request, room *Room, token string) {
 	view := a.buildRoomView(room, token)
-	a.renderTemplate(w, "layout", PageData{Title: "Snowflakes • " + room.Code, Token: token, Room: &view, HasRoom: true})
+	a.renderComponent(w, r, page(PageData{Title: "Snowflakes • " + room.Code, Token: token, Room: &view, HasRoom: true}))
 }
 
 func (a *App) handleRoomFragment(w http.ResponseWriter, r *http.Request, room *Room, token string) {
 	view := a.buildRoomView(room, token)
-	a.renderTemplate(w, "room_inner", view)
+	a.renderComponent(w, r, roomInner(view))
 }
 
 func (a *App) handleRoomEvents(w http.ResponseWriter, r *http.Request, room *Room) {

@@ -118,10 +118,23 @@ load_state() {
 build_binary() {
 	ensure_dirs
 	load_proxy_env
+
+	local local_go_version
+	local_go_version="$(GOWORK=off go env GOVERSION 2>/dev/null || true)"
+	if [[ -n "$local_go_version" && "$local_go_version" != go1.25* ]]; then
+		note "Local Go is $local_go_version; the first build may download Go 1.25 automatically."
+	fi
+
+	note "Generating templ components"
+	(
+		cd "$ROOT_DIR"
+		templ generate -path internal/snowflakes
+	)
+
 	note "Building Snowflakes"
 	(
 		cd "$ROOT_DIR"
-		GOWORK=off GOTOOLCHAIN=local go build -buildvcs=false -o "$BIN_PATH" ./cmd/snowflakes
+		GOWORK=off go build -buildvcs=false -o "$BIN_PATH" ./cmd/snowflakes
 	)
 }
 
@@ -229,6 +242,7 @@ main() {
 	case "$command" in
 		setup)
 			require_command go
+			require_command templ
 			require_command tmux
 			require_command caddy
 			require_command python3
@@ -236,6 +250,7 @@ main() {
 			;;
 		redeploy)
 			require_command go
+			require_command templ
 			require_command tmux
 			require_command caddy
 			require_command python3

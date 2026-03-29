@@ -1,0 +1,351 @@
+package snowflakes
+
+templ page(data PageData) {
+	<!doctype html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ data.Title }</title>
+			<link rel="stylesheet" href="/static/styles.css"/>
+		</head>
+		<body
+			if data.HasRoom && data.Room != nil {
+				data-room-code={ data.Room.Code }
+			}
+		>
+			<header class="topbar">
+				<h1><a href="/">❄️ Snowflakes</a></h1>
+			</header>
+			if data.HasRoom && data.Room != nil {
+				<main id="room-root">
+					@roomInner(*data.Room)
+				</main>
+			} else {
+				<main class="landing">
+					<section class="panel">
+						<h2>Create room</h2>
+						<form method="post" action="/rooms">
+							<label>Name <input type="text" name="name" required/></label>
+							<button type="submit">Create room</button>
+						</form>
+					</section>
+					<section class="panel">
+						<h2>Join room</h2>
+						<form method="post" action="/rooms/join">
+							<label>Room code <input type="text" name="code" required/></label>
+							<label>Name <input type="text" name="name" required/></label>
+							<button type="submit">Join room</button>
+						</form>
+					</section>
+				</main>
+			}
+			<script src="/static/app.js"></script>
+		</body>
+	</html>
+}
+
+templ roomInner(view RoomView) {
+	<div class="room-shell">
+		<div class="room-header panel">
+			<div>
+				<h2>Room { view.Code }</h2>
+				<p>Share: <a href={ view.PublicURL }>{ view.PublicURL }</a></p>
+				<p>Status: { view.Status } · Won cards: { itoa(view.Won) } · Remaining cards: { itoa(view.RemainingCards) }</p>
+			</div>
+			<div>
+				if view.ViewerName != "" {
+					<p>You are <strong>{ view.ViewerName }</strong> ({ view.ViewerRole })</p>
+				} else {
+					<form method="post" action="/rooms/join">
+						<input type="hidden" name="code" value={ view.Code }/>
+						<label>Name <input type="text" name="name" required/></label>
+						<button type="submit">Join this room</button>
+					</form>
+				}
+			</div>
+		</div>
+
+		if view.Flash != "" {
+			<div class="panel flash">{ view.Flash }</div>
+		}
+
+		<div class="grid two">
+			<section class="panel">
+				<h3>Players ({ itoa(view.PlayerCount) }) / Observers ({ itoa(view.ObserverCount) })</h3>
+				<ul class="participants">
+					for _, participant := range view.Participants {
+						<li>
+							<strong>{ participant.Name }</strong>
+							if participant.Creator {
+								<span class="badge">creator</span>
+							}
+							if participant.Admin {
+								<span class="badge">admin</span>
+							}
+							<span class="badge role">{ participant.Role }</span>
+							if participant.PendingRole != "" {
+								<span class="badge pending">next: { participant.PendingRole }</span>
+							}
+							if view.IsAdmin {
+								<div class="participant-actions">
+									if !participant.IsViewer {
+										<form method="post" action={ roomActionPath(view.Code, "participant-role") } data-ajax="true">
+											<input type="hidden" name="participant" value={ participant.Token }/>
+											if participant.Role == "player" {
+												<input type="hidden" name="role" value="observer"/>
+												<button>Make observer</button>
+											} else {
+												<input type="hidden" name="role" value="player"/>
+												<button>Make player</button>
+											}
+										</form>
+										<form method="post" action={ roomActionPath(view.Code, "participant-admin") } data-ajax="true">
+											<input type="hidden" name="participant" value={ participant.Token }/>
+											if participant.Admin {
+												<input type="hidden" name="admin" value="0"/>
+												<button disabled?={ participant.Creator }>Demote admin</button>
+											} else {
+												<input type="hidden" name="admin" value="1"/>
+												<button>Promote admin</button>
+											}
+										</form>
+									}
+								</div>
+							}
+						</li>
+					}
+				</ul>
+			</section>
+
+			<section class="panel">
+				<h3>Room settings</h3>
+				if view.IsAdmin {
+					<form method="post" action={ roomActionPath(view.Code, "settings") } data-ajax="true" class="stacked">
+						<label>Word pack
+							<select name="selected_pack">
+								for _, pack := range view.Packs {
+									<option value={ pack.Name } selected?={ pack.Name == view.Settings.SelectedPack }>{ pack.Name }</option>
+								}
+							</select>
+						</label>
+						<label>Guessers <input type="number" min="1" name="guesser_count" value={ itoa(view.Settings.GuesserCount) }/></label>
+						<label>Card pool size <input type="number" min="1" name="card_pool_size" value={ itoa(view.Settings.CardPoolSize) }/></label>
+						<label>Choice slate size <input type="number" min="1" name="choice_slate_size" value={ itoa(view.Settings.ChoiceSlateSize) }/></label>
+						<label>Clue slots mode
+							<select name="clue_slots_mode">
+								<option value="auto" selected?={ view.Settings.ClueSlotsMode == "auto" }>auto</option>
+								<option value="fixed" selected?={ view.Settings.ClueSlotsMode == "fixed" }>fixed</option>
+							</select>
+						</label>
+						<label>Fixed clue slots <input type="number" min="1" name="fixed_clue_slots" value={ itoa(view.Settings.FixedClueSlots) }/></label>
+						<label>Guess submission mode
+							<select name="guess_submission_mode">
+								<option value="spokesperson" selected?={ view.Settings.GuessSubmissionMode == "spokesperson" }>spokesperson</option>
+								<option value="one_each" selected?={ view.Settings.GuessSubmissionMode == "one_each" }>one guess each</option>
+							</select>
+						</label>
+						<label>Guess resolution mode
+							<select name="guess_resolution_mode">
+								<option value="auto_exact_else_admin" selected?={ view.Settings.GuessResolutionMode == "auto_exact_else_admin" }>auto exact, else admin</option>
+								<option value="admin_only" selected?={ view.Settings.GuessResolutionMode == "admin_only" }>admin only</option>
+							</select>
+						</label>
+						<label>Word selection mode
+							<select name="word_selection_mode">
+								<option value="blind_slot" selected?={ view.Settings.WordSelectionMode == "blind_slot" }>blind slot</option>
+								<option value="player_vote" selected?={ view.Settings.WordSelectionMode == "player_vote" }>player vote</option>
+							</select>
+						</label>
+						<label class="checkbox"><input type="checkbox" name="show_card_pool_to_guessers" value="1" checked?={ view.Settings.ShowCardPoolToGuessers }/> Show card pool to guessers</label>
+						<button>Save settings</button>
+					</form>
+
+					<form method="post" action={ roomPacksPath(view.Code) } enctype="multipart/form-data" data-ajax="true" class="stacked">
+						<h4>Upload / paste pack</h4>
+						<label>Pack name <input type="text" name="pack_name"/></label>
+						<label>Pasted words <textarea name="pack_text" rows="6"></textarea></label>
+						<label>Text file <input type="file" name="pack_file" accept=".txt,text/plain"/></label>
+						<button>Import pack</button>
+					</form>
+				} else {
+					<ul>
+						<li>Word pack: { view.Settings.SelectedPack }</li>
+						<li>Guessers: { itoa(view.Settings.GuesserCount) }</li>
+						<li>Pool/slate: { itoa(view.Settings.CardPoolSize) } / { itoa(view.Settings.ChoiceSlateSize) }</li>
+					</ul>
+				}
+			</section>
+		</div>
+
+		<section class="panel">
+			<h3>Game</h3>
+			if view.IsAdmin && view.CanStartGame {
+				<form method="post" action={ roomActionPath(view.Code, "start") } data-ajax="true"><button>Start new 13-card game</button></form>
+			}
+			if view.Round != nil {
+				<p>Active guessers: { commaSeparated(view.Round.ActiveGuessers) }</p>
+				<p>Clue-givers: { commaSeparated(view.Round.CluegiverNames) }</p>
+				<p>Phase: <strong>{ view.Round.Phase }</strong></p>
+
+				if view.Round.CanSeeCardPool {
+					<div><strong>Card pool:</strong> { commaSeparated(view.Round.CardPool) }</div>
+				}
+				if view.Round.CanSeeTarget {
+					<div><strong>Target word:</strong> { view.Round.TargetWord }</div>
+				}
+
+				if view.Round.Phase == "word_selection" {
+					<div class="choices">
+						for _, choice := range view.Round.ChoiceSlate {
+							<div class="choice">
+								<div>Slot { itoa(choice.DisplayNumber) }: { choice.Word }</div>
+								<div>Votes: { itoa(choice.Votes) }</div>
+								if view.Round.EligibleCluegiver {
+									if view.Settings.WordSelectionMode == "player_vote" {
+										<form method="post" action={ roomActionPath(view.Code, "vote") } data-ajax="true">
+											<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+											if choice.VotedByYou {
+												<button>Voted</button>
+											} else {
+												<button>Vote</button>
+											}
+										</form>
+									}
+								}
+								if view.IsAdmin && view.Settings.WordSelectionMode == "player_vote" {
+									<form method="post" action={ roomActionPath(view.Code, "finalize") } data-ajax="true">
+										<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+										if choice.Selected {
+											<button>Selected</button>
+										} else {
+											<button>Admin choose</button>
+										}
+									</form>
+								}
+								if view.Round.Spokesperson && view.Settings.WordSelectionMode == "blind_slot" {
+									<form method="post" action={ roomActionPath(view.Code, "blind") } data-ajax="true">
+										<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+										<button>Pick slot { itoa(choice.DisplayNumber) }</button>
+									</form>
+								}
+							</div>
+						}
+					</div>
+				}
+
+				if view.Round.Phase == "clue_entry" {
+					if view.Round.EligibleCluegiver {
+						<div class="stacked">
+							if view.Round.ClueSlots >= 1 {
+								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
+									<input type="hidden" name="slot" value="1"/>
+									<label>Clue 1 <input type="text" name="text"/></label>
+									<button>Submit</button>
+								</form>
+							}
+							if view.Round.ClueSlots >= 2 {
+								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
+									<input type="hidden" name="slot" value="2"/>
+									<label>Clue 2 <input type="text" name="text"/></label>
+									<button>Submit</button>
+								</form>
+							}
+							if view.Round.ClueSlots >= 3 {
+								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
+									<input type="hidden" name="slot" value="3"/>
+									<label>Clue 3 <input type="text" name="text"/></label>
+									<button>Submit</button>
+								</form>
+							}
+						</div>
+					} else {
+						<p>Waiting for clue-givers to submit their clues.</p>
+					}
+					if view.IsAdmin && view.Round.AllCluesSubmitted {
+						<form method="post" action={ roomActionPath(view.Code, "review") } data-ajax="true"><button>Open clue review</button></form>
+					}
+				}
+
+				if view.Round.Phase == "clue_review" {
+					<ul class="clues">
+						for _, clue := range view.Round.Clues {
+							<li
+								if clue.Invalid {
+									class="invalid"
+								}
+							>
+								<strong>{ clue.PlayerName } #{ itoa(clue.Slot) }</strong>: { clue.Text }
+								if clue.Invalid {
+									<span class="badge bad">
+										if clue.Manual {
+											manual invalid
+										} else {
+											duplicate
+										}
+									</span>
+								}
+								if clue.Editable {
+									<form method="post" action={ roomActionPath(view.Code, "toggle-clue") } data-ajax="true">
+										<input type="hidden" name="key" value={ clue.Key }/>
+										if clue.Manual {
+											<button>Restore</button>
+										} else {
+											<button>Toggle invalid</button>
+										}
+									</form>
+								}
+							</li>
+						}
+					</ul>
+					if view.IsAdmin {
+						<form method="post" action={ roomActionPath(view.Code, "guess-phase") } data-ajax="true"><button>Reveal valid clues to guessers</button></form>
+					}
+				}
+
+				if view.Round.Phase == "guess_entry" {
+					<div><strong>Visible clues:</strong> { commaSeparated(view.Round.VisibleClues) }</div>
+					if view.Round.ActiveGuesser && (view.Round.Spokesperson || view.Settings.GuessSubmissionMode == "one_each") {
+						<form method="post" action={ roomActionPath(view.Code, "guess") } data-ajax="true" class="inline-form">
+							<label>Guess <input type="text" name="guess"/></label>
+							<button>Submit guess</button>
+						</form>
+						<form method="post" action={ roomActionPath(view.Code, "guess") } data-ajax="true"><input type="hidden" name="pass" value="1"/><button>Pass</button></form>
+					}
+					<ul>
+						for _, guess := range view.Round.Guesses {
+							<li>
+								{ guess.PlayerName }:
+								if guess.Passed {
+									passed
+								} else if guess.Guess != "" {
+									{ guess.Guess }
+								} else {
+									waiting
+								}
+							</li>
+						}
+					</ul>
+					if view.IsAdmin {
+						<div class="inline-actions">
+							<form method="post" action={ roomActionPath(view.Code, "resolve") } data-ajax="true"><input type="hidden" name="result" value="correct"/><button>Mark correct</button></form>
+							<form method="post" action={ roomActionPath(view.Code, "resolve") } data-ajax="true"><input type="hidden" name="result" value="wrong"/><button>Mark wrong</button></form>
+							<form method="post" action={ roomActionPath(view.Code, "resolve") } data-ajax="true"><input type="hidden" name="result" value="pass"/><button>Mark pass</button></form>
+						</div>
+					}
+				}
+
+				if view.Round.Phase == "round_resolved" {
+					<p><strong>Round result:</strong> { view.Round.Result }</p>
+					<p><strong>Target:</strong> { view.Round.TargetWord }</p>
+					<p><strong>Valid clues:</strong> { commaSeparated(view.Round.VisibleClues) }</p>
+					if view.CanShowNextRound {
+						<form method="post" action={ roomActionPath(view.Code, "next") } data-ajax="true"><button>Next round</button></form>
+					}
+				}
+			} else {
+				<p>No active round yet.</p>
+			}
+		</section>
+	</div>
+}
