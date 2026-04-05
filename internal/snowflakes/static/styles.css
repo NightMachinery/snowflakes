@@ -222,6 +222,19 @@ a:hover { color: var(--primary); }
   align-items: flex-start;
 }
 .participant-main { display: grid; gap: 0.55rem; }
+.participant-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+.participant-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 1rem;
+}
 .clue-item.invalid { border-color: #fca5a5; background: #fff5f5; }
 .guess-item span:last-child { color: var(--muted); }
 .summary-list li {

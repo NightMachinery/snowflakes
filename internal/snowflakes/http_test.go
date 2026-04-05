@@ -142,7 +142,7 @@ func TestStaticAssetServed(t *testing.T) {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
 	}
 	body := rr.Body.String()
-	for _, want := range []string{"snowflakesRefreshRoom", "snowflakes_player_name", "execCommand('copy')", "Copy this room link:", "data-preserve-open"} {
+	for _, want := range []string{"snowflakesRefreshRoom", "snowflakes_player_name", "execCommand('copy')", "Copy this room link:", "data-preserve-open", "input.value = input.value.trim()"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected JS asset body to contain %q, got %q", want, body)
 		}
@@ -284,7 +284,7 @@ func TestClueEntryUsesSingleBulkSubmitForm(t *testing.T) {
 	app.Handler().ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	for _, want := range []string{"name=\"clue_1\"", "name=\"clue_2\"", ">Submit clues</button>", "Your clues: 0 / 2"} {
+	for _, want := range []string{"name=\"clue_1\"", "name=\"clue_2\"", "pattern=\".*\\\\S.*\"", ">Submit clues</button>", "Your clues: 0 / 2"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected clue-entry fragment to contain %q, got %q", want, body)
 		}
@@ -335,5 +335,84 @@ func TestClueBulkSubmitActionSavesAllSlots(t *testing.T) {
 	}
 	if !room.allCluesSubmitted(room.Game.CurrentRound) {
 		t.Fatal("expected cluegiver to have completed all clue slots")
+	}
+	if room.Game.CurrentRound.Phase != PhaseClueReview {
+		t.Fatalf("expected round to auto-advance to clue review, got %s", room.Game.CurrentRound.Phase)
+	}
+}
+
+func TestClueReviewHidesDuplicateToggleButtons(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom("creator-token", "Alice")
+	room.mu.Lock()
+	room.join("bob-token", "Bob")
+	room.join("cara-token", "Cara")
+	room.Game = &Game{
+		Status:       GameRunning,
+		CurrentIndex: 0,
+		CurrentRound: &Round{
+			Phase:         PhaseClueReview,
+			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
+			TargetIndex:   1,
+			TargetWord:    "Pear",
+			VotesByToken:  map[string]int{},
+			Clues:         map[string]ClueSubmission{"b:1": {PlayerToken: "bob-token", Slot: 1, Text: "Orchard"}, "c:1": {PlayerToken: "cara-token", Slot: 1, Text: " orchard "}, "b:2": {PlayerToken: "bob-token", Slot: 2, Text: "Green"}},
+			ManualInvalid: map[string]bool{"b:2": true},
+			Guesses:       map[string]string{},
+			PassByToken:   map[string]bool{},
+		},
+	}
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+	room.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
+	rr := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	if !strings.Contains(body, "duplicate") {
+		t.Fatalf("expected duplicate clue badge in clue review, got %q", body)
+	}
+	if got := strings.Count(body, ">Toggle invalid</button>"); got != 0 {
+		t.Fatalf("expected duplicate clues to hide toggle buttons, got %q", body)
+	}
+	if got := strings.Count(body, ">Restore</button>"); got != 1 {
+		t.Fatalf("expected one restore button for manual invalid clue, got %q", body)
+	}
+}
+
+func TestParticipantListShowsRoundControllerIcon(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom("creator-token", "Alice")
+	room.mu.Lock()
+	room.join("bob-token", "Bob")
+	room.Game = &Game{
+		Status:       GameRunning,
+		CurrentIndex: 0,
+		CurrentRound: &Round{
+			Phase:         PhaseWordSelection,
+			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
+			VotesByToken:  map[string]int{},
+			Clues:         map[string]ClueSubmission{},
+			ManualInvalid: map[string]bool{},
+			Guesses:       map[string]string{},
+			PassByToken:   map[string]bool{},
+		},
+	}
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+	room.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
+	rr := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	if got := strings.Count(body, "aria-label=\"Round controller\""); got != 1 {
+		t.Fatalf("expected exactly one round controller icon, got %q", body)
+	}
+	if !strings.Contains(body, "🕹️") {
+		t.Fatalf("expected round controller icon in participant list, got %q", body)
 	}
 }

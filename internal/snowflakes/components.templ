@@ -243,7 +243,7 @@ templ roomInner(view RoomView) {
 								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="stacked">
 									<div class="stacked">
 										for _, entry := range view.Round.ClueEntries {
-											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required/></label>
+											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required pattern=".*\\S.*" title="Clue cannot be blank or whitespace only."/></label>
 										}
 									</div>
 									<p class="muted">Your clues: { itoa(view.Round.YourClueCount) } / { itoa(view.Round.ClueSlots) } · Round progress: { itoa(view.Round.SubmittedPlayers) } / { itoa(view.Round.TotalCluegivers) } clue-givers finished</p>
@@ -259,11 +259,6 @@ templ roomInner(view RoomView) {
 								<p class="lead">Stay blind while the clue-givers enter their clues.</p>
 							} else {
 								<p class="lead">Waiting for clue-givers to finish submitting clues.</p>
-							}
-							if view.Round.CanManageRound && view.Round.AllCluesSubmitted {
-								<form method="post" action={ roomActionPath(view.Code, "review") } data-ajax="true">
-									<button type="submit">Open clue review</button>
-								</form>
 							}
 						}
 
@@ -283,15 +278,15 @@ templ roomInner(view RoomView) {
 											<p>{ clue.Text }</p>
 											if clue.Invalid {
 												<span class="badge bad">
-													if clue.Manual {
-														manual invalid
-													} else {
+													if clue.Duplicate {
 														duplicate
+													} else {
+														manual invalid
 													}
 												</span>
 											}
 										</div>
-										if clue.Editable {
+										if clue.Toggleable {
 											<form method="post" action={ roomActionPath(view.Code, "toggle-clue") } data-ajax="true">
 												<input type="hidden" name="key" value={ clue.Key }/>
 												if clue.Manual {
@@ -383,7 +378,12 @@ templ roomInner(view RoomView) {
 						for _, participant := range view.Participants {
 							<li class="participant-card">
 								<div class="participant-main">
-									<strong>{ participant.Name }</strong>
+									<div class="participant-name-row">
+										<strong>{ participant.Name }</strong>
+										if participant.RoundController {
+											<span class="participant-icon" role="img" aria-label="Round controller" title="Round controller">🕹️</span>
+										}
+									</div>
 									<div class="badge-row">
 										if participant.Creator {
 											<span class="badge">creator</span>

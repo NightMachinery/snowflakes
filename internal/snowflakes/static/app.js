@@ -48,6 +48,15 @@
     persistPlayerName(input.value);
   });
 
+  function trimClueInputs(form) {
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.action.includes('/actions/clue')) return;
+    for (const input of form.querySelectorAll('input[name^="clue_"]')) {
+      if (!(input instanceof HTMLInputElement)) continue;
+      input.value = input.value.trim();
+    }
+  }
+
   function fallbackCopyText(text) {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -100,6 +109,7 @@
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     persistPlayerName(new FormData(form).get('name'));
+    trimClueInputs(form);
     if (form.dataset.ajax !== 'true') return;
     event.preventDefault();
     const response = await fetch(form.action, {

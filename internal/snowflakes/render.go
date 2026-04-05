@@ -40,13 +40,14 @@ type RoomView struct {
 }
 
 type ParticipantView struct {
-	Token       string
-	Name        string
-	Role        string
-	Admin       bool
-	Creator     bool
-	PendingRole string
-	IsViewer    bool
+	Token           string
+	Name            string
+	Role            string
+	Admin           bool
+	Creator         bool
+	PendingRole     string
+	IsViewer        bool
+	RoundController bool
 }
 
 type SettingsView struct {
@@ -110,9 +111,11 @@ type ClueView struct {
 	Slot           int
 	Text           string
 	Invalid        bool
+	Duplicate      bool
 	Manual         bool
 	Auto           bool
 	Editable       bool
+	Toggleable     bool
 	SubmittedByYou bool
 }
 
@@ -137,8 +140,14 @@ func (a *App) buildRoomView(room *Room, viewerToken string) RoomView {
 	viewer := room.Participants[viewerToken]
 	participants := make([]ParticipantView, 0, len(room.Participants))
 	playerCount, observerCount := 0, 0
+	roundControllerTokens := map[string]bool{}
+	if round := room.round(); round != nil {
+		for _, token := range room.roundControllers(round) {
+			roundControllerTokens[token] = true
+		}
+	}
 	for _, p := range room.Participants {
-		pv := ParticipantView{Token: p.Token, Name: p.Name, Role: string(p.Role), Admin: p.Admin, Creator: p.Creator, IsViewer: p.Token == viewerToken}
+		pv := ParticipantView{Token: p.Token, Name: p.Name, Role: string(p.Role), Admin: p.Admin, Creator: p.Creator, IsViewer: p.Token == viewerToken, RoundController: roundControllerTokens[p.Token]}
 		if p.PendingRole != nil {
 			pv.PendingRole = string(*p.PendingRole)
 		}
@@ -209,6 +218,7 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 	}
 	guessers := r.activeGuessers(round)
 	cluegivers := r.eligibleCluegivers(round)
+	duplicates := detectDuplicateClues(round)
 	invalid := detectInvalidClues(round)
 	voteCounts := map[int]int{}
 	for _, idx := range round.VotesByToken {
@@ -250,7 +260,19 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 		if p := r.Participants[clue.PlayerToken]; p != nil {
 			name = p.Name
 		}
-		cv := ClueView{Key: key, PlayerName: name, Slot: clue.Slot, Text: clue.Text, Invalid: invalid[key], Manual: round.ManualInvalid[key], Auto: invalid[key] && !round.ManualInvalid[key], Editable: canManageRound && round.Phase == PhaseClueReview, SubmittedByYou: clue.PlayerToken == viewerToken}
+		cv := ClueView{
+			Key:            key,
+			PlayerName:     name,
+			Slot:           clue.Slot,
+			Text:           clue.Text,
+			Invalid:        invalid[key],
+			Duplicate:      duplicates[key],
+			Manual:         round.ManualInvalid[key],
+			Auto:           invalid[key] && !round.ManualInvalid[key],
+			Editable:       canManageRound && round.Phase == PhaseClueReview,
+			Toggleable:     canManageRound && round.Phase == PhaseClueReview && !duplicates[key],
+			SubmittedByYou: clue.PlayerToken == viewerToken,
+		}
 		clues = append(clues, cv)
 		if !invalid[key] {
 			validClues = append(validClues, clue.Text)

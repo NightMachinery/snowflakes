@@ -35,7 +35,7 @@ func TestDefaultRoomSettingsUsesAdminPick(t *testing.T) {
 func TestDetectInvalidCluesMarksDuplicatesAndManualInvalid(t *testing.T) {
 	round := &Round{
 		Clues: map[string]ClueSubmission{
-			"a:1": {PlayerToken: "a", Slot: 1, Text: "Apple"},
+			"a:1": {PlayerToken: "a", Slot: 1, Text: " Apple "},
 			"b:1": {PlayerToken: "b", Slot: 1, Text: "apple"},
 			"c:1": {PlayerToken: "c", Slot: 1, Text: "pear"},
 		},
@@ -44,6 +44,19 @@ func TestDetectInvalidCluesMarksDuplicatesAndManualInvalid(t *testing.T) {
 	invalid := detectInvalidClues(round)
 	if !invalid["a:1"] || !invalid["b:1"] || !invalid["c:1"] {
 		t.Fatalf("unexpected invalid map: %#v", invalid)
+	}
+}
+
+func TestToggleManualInvalidRejectsDuplicateClues(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Game.CurrentRound.Phase = PhaseClueReview
+	room.Game.CurrentRound.Clues = map[string]ClueSubmission{
+		"b:1": {PlayerToken: "b", Slot: 1, Text: " Orchard "},
+		"a:1": {PlayerToken: "a", Slot: 1, Text: "orchard"},
+	}
+
+	if err := room.toggleManualInvalid("b", "b:1"); err == nil {
+		t.Fatal("expected duplicate clue toggle to fail")
 	}
 }
 
@@ -199,5 +212,24 @@ func TestSubmitCluesRequiresCompleteSet(t *testing.T) {
 	}
 	if !room.allCluesSubmitted(room.Game.CurrentRound) {
 		t.Fatal("expected all clues to be submitted")
+	}
+	if room.Game.CurrentRound.Phase != PhaseClueReview {
+		t.Fatalf("expected round to auto-advance to clue review, got %s", room.Game.CurrentRound.Phase)
+	}
+}
+
+func TestSubmitCluesTrimsWhitespaceBeforeSaving(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Game.CurrentRound.Phase = PhaseClueEntry
+	room.Game.CurrentRound.TargetWord = "Pear"
+
+	if err := room.submitClues("b", []string{"  orchard  ", "\tgreen\n"}); err != nil {
+		t.Fatalf("expected clue submission to succeed: %v", err)
+	}
+	if got := room.Game.CurrentRound.Clues["b:1"].Text; got != "orchard" {
+		t.Fatalf("expected first clue to be trimmed, got %q", got)
+	}
+	if got := room.Game.CurrentRound.Clues["b:2"].Text; got != "green" {
+		t.Fatalf("expected second clue to be trimmed, got %q", got)
 	}
 }

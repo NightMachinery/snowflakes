@@ -741,11 +741,14 @@ func (r *Room) submitClues(token string, texts []string) error {
 	for slot := 1; slot <= maxSlots; slot++ {
 		round.Clues[clueKey(token, slot)] = ClueSubmission{PlayerToken: token, Slot: slot, Text: normalized[slot-1]}
 	}
+	if r.allCluesSubmitted(round) {
+		round.Phase = PhaseClueReview
+	}
 	return nil
 }
 
 func (r *Room) submittedCluegiverCount(round *Round) int {
-	if round == nil || round.Phase != PhaseClueEntry {
+	if round == nil {
 		return 0
 	}
 	slots := r.effectiveClueSlots(round)
@@ -795,6 +798,9 @@ func (r *Room) toggleManualInvalid(requester, key string) error {
 	}
 	if _, ok := round.Clues[key]; !ok {
 		return errors.New("unknown clue")
+	}
+	if detectDuplicateClues(round)[key] {
+		return errors.New("duplicate clues cannot be toggled")
 	}
 	round.ManualInvalid[key] = !round.ManualInvalid[key]
 	return nil
@@ -988,23 +994,39 @@ func (r *Room) uploadPack(name string, data io.Reader) error {
 }
 
 func detectInvalidClues(round *Round) map[string]bool {
+	if round == nil {
+		return map[string]bool{}
+	}
+	duplicates := detectDuplicateClues(round)
+	invalid := map[string]bool{}
+	for key := range round.Clues {
+		if round.ManualInvalid[key] || duplicates[key] {
+			invalid[key] = true
+		}
+	}
+	return invalid
+}
+
+func detectDuplicateClues(round *Round) map[string]bool {
+	if round == nil {
+		return map[string]bool{}
+	}
 	counts := map[string]int{}
-	for key, clue := range round.Clues {
+	for _, clue := range round.Clues {
 		norm := normalizeText(clue.Text)
 		if norm == "" {
 			continue
 		}
 		counts[norm]++
-		_ = key
 	}
-	invalid := map[string]bool{}
+	duplicates := map[string]bool{}
 	for key, clue := range round.Clues {
 		norm := normalizeText(clue.Text)
-		if round.ManualInvalid[key] || counts[norm] > 1 {
-			invalid[key] = true
+		if counts[norm] > 1 {
+			duplicates[key] = true
 		}
 	}
-	return invalid
+	return duplicates
 }
 
 func max(a, b int) int {
