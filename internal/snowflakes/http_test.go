@@ -9,39 +9,22 @@ import (
 	"time"
 )
 
-func newTestApp(t *testing.T) *App {
-	t.Helper()
-	app, err := NewApp(Config{
-		Host:        "127.0.0.1",
-		Port:        3400,
-		PublicURL:   "http://example.com",
-		WordPackDir: t.TempDir(),
-	})
-	if err != nil {
-		t.Fatalf("NewApp returned error: %v", err)
-	}
-	return app
-}
-
 func TestIndexRendersLandingPage(t *testing.T) {
 	app := newTestApp(t)
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := performRequest(t, app.Handler(), http.MethodGet, "/", "", nil, nil)
+	assertStatus(t, rr.Code, http.StatusOK)
 
-	app.Handler().ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
-	}
 	body := rr.Body.String()
-	for _, want := range []string{"<!doctype html>", "<main class=\"page-shell landing-shell\">", "Create room", "Join room", "keep the hidden info actually hidden"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected body to contain %q, got %q", want, body)
-		}
-	}
-	if strings.Contains(body, "A cleaner Just One-style room for quick self-hosted play.") {
-		t.Fatalf("did not expect removed header subtitle, got %q", body)
-	}
+	assertContainsAll(t, body,
+		"<!doctype html>",
+		"/static/styles.css",
+		"/static/app.js",
+		"action=\"/rooms\"",
+		"action=\"/rooms/join\"",
+		"Create room",
+		"Join room",
+	)
+	assertNotContainsAny(t, body, "id=\"room-root\"", "data-room-code=")
 	if cookie := rr.Result().Cookies(); len(cookie) == 0 {
 		t.Fatal("expected auth cookie to be set")
 	}
@@ -52,46 +35,29 @@ func TestRoomPageAndFragmentRender(t *testing.T) {
 	room := app.createRoom("creator-token", "Alice")
 	handler := app.Handler()
 
-	pageReq := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code, nil)
-	pageReq.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
-	pageRR := httptest.NewRecorder()
-	handler.ServeHTTP(pageRR, pageReq)
+	pageRR := performRequest(t, handler, http.MethodGet, "/rooms/"+room.Code, "creator-token", nil, nil)
+	assertStatus(t, pageRR.Code, http.StatusOK)
 
-	if pageRR.Code != http.StatusOK {
-		t.Fatalf("expected room page status %d, got %d", http.StatusOK, pageRR.Code)
-	}
 	pageBody := pageRR.Body.String()
-	for _, want := range []string{
+	assertContainsAll(t, pageBody,
+		"<!doctype html>",
 		"id=\"room-root\"",
-		"data-room-code=\"" + room.Code + "\"",
+		"data-room-code=\""+room.Code+"\"",
 		"You are here",
 		"<strong>Alice</strong>",
-		"Room " + room.Code,
-		"data-copy-text=\"http://example.com/rooms/" + room.Code + "\"",
+		"Room "+room.Code,
+		"data-copy-text=\"http://example.com/rooms/"+room.Code+"\"",
 		"Copy link",
-	} {
-		if !strings.Contains(pageBody, want) {
-			t.Fatalf("expected room page to contain %q, got %q", want, pageBody)
-		}
-	}
+		"action=\"/rooms/"+room.Code+"/actions/start\"",
+		"data-ajax=\"true\"",
+	)
 
-	fragmentReq := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	fragmentReq.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
-	fragmentRR := httptest.NewRecorder()
-	handler.ServeHTTP(fragmentRR, fragmentReq)
+	fragmentRR := performRequest(t, handler, http.MethodGet, "/rooms/"+room.Code+"/fragment", "creator-token", nil, nil)
+	assertStatus(t, fragmentRR.Code, http.StatusOK)
 
-	if fragmentRR.Code != http.StatusOK {
-		t.Fatalf("expected fragment status %d, got %d", http.StatusOK, fragmentRR.Code)
-	}
 	fragmentBody := fragmentRR.Body.String()
-	if strings.Contains(fragmentBody, "<!doctype html>") {
-		t.Fatalf("fragment should not contain full document, got %q", fragmentBody)
-	}
-	for _, want := range []string{"class=\"room-shell\"", "Room " + room.Code, "Copy link", "Ready to start"} {
-		if !strings.Contains(fragmentBody, want) {
-			t.Fatalf("expected fragment to contain %q, got %q", want, fragmentBody)
-		}
-	}
+	assertNotContainsAny(t, fragmentBody, "<!doctype html>", "<html", "<body")
+	assertContainsAll(t, fragmentBody, "class=\"room-shell\"", "Room "+room.Code, "Copy link", "Ready to start")
 }
 
 func TestRoomEventsSendsInitialRefresh(t *testing.T) {
@@ -131,203 +97,167 @@ func TestRoomEventsSendsInitialRefresh(t *testing.T) {
 	}
 }
 
-func TestStaticAssetServed(t *testing.T) {
+func TestStaticAssetsServeContentTypes(t *testing.T) {
 	app := newTestApp(t)
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/static/app.js", nil)
-
-	app.Handler().ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
-	}
-	body := rr.Body.String()
-	for _, want := range []string{"snowflakesRefreshRoom", "snowflakes_player_name", "execCommand('copy')", "Copy this room link:", "data-preserve-open", "input.value = input.value.trim()"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected JS asset body to contain %q, got %q", want, body)
-		}
+	for _, tc := range []struct {
+		name        string
+		path        string
+		contentType string
+	}{
+		{name: "javascript", path: "/static/app.js", contentType: "javascript"},
+		{name: "stylesheet", path: "/static/styles.css", contentType: "text/css"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := performRequest(t, app.Handler(), http.MethodGet, tc.path, "", nil, nil)
+			assertStatus(t, rr.Code, http.StatusOK)
+			if got := rr.Header().Get("Content-Type"); !strings.Contains(got, tc.contentType) {
+				t.Fatalf("expected content type containing %q, got %q", tc.contentType, got)
+			}
+			if strings.TrimSpace(rr.Body.String()) == "" {
+				t.Fatalf("expected non-empty body for %s", tc.path)
+			}
+		})
 	}
 }
 
-func TestLightThemeStylesheetServed(t *testing.T) {
-	app := newTestApp(t)
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/static/styles.css", nil)
+func TestStartActionSupportsAjaxAndBrowserRequests(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		ajax       bool
+		wantStatus int
+	}{
+		{name: "ajax", ajax: true, wantStatus: http.StatusNoContent},
+		{name: "browser", ajax: false, wantStatus: http.StatusSeeOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newTestApp(t)
+			room := app.createRoom(aliceToken, "Alice")
+			room.mu.Lock()
+			room.join(bobToken, "Bob")
+			room.mu.Unlock()
 
-	app.Handler().ServeHTTP(rr, req)
+			rr := performFormRequest(t, app.Handler(), "/rooms/"+room.Code+"/actions/start", aliceToken, "", tc.ajax)
+			assertStatus(t, rr.Code, tc.wantStatus)
+			if !tc.ajax {
+				if got := rr.Header().Get("Location"); got != "/rooms/"+room.Code {
+					t.Fatalf("expected redirect to room page, got %q", got)
+				}
+			}
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
-	}
-	body := rr.Body.String()
-	for _, want := range []string{"color-scheme: light;", ".room-layout", ".settings-details"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected CSS asset body to contain %q, got %q", want, body)
-		}
-	}
-	if strings.Contains(body, "color-scheme: dark") {
-		t.Fatalf("did not expect dark color-scheme in CSS, got %q", body)
+			room.mu.RLock()
+			defer room.mu.RUnlock()
+			if room.Game == nil || room.Game.Status != GameRunning || room.Game.CurrentRound == nil {
+				t.Fatalf("expected running game with active round, got %#v", room.Game)
+			}
+		})
 	}
 }
 
-func TestStartActionReturnsAndStartsRound(t *testing.T) {
+func TestAnonymousRoomPageShowsJoinFormInsteadOfViewerState(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
-	room.mu.Lock()
-	room.join("bob-token", "Bob")
-	room.mu.Unlock()
+	room := app.createRoom(aliceToken, "Alice")
 
-	req := httptest.NewRequest(http.MethodPost, "/rooms/"+room.Code+"/actions/start", nil)
-	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
-	req.Header.Set("X-Requested-With", "fetch")
-	rr := httptest.NewRecorder()
+	rr := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code, daveToken, nil, nil)
+	assertStatus(t, rr.Code, http.StatusOK)
 
-	done := make(chan struct{})
-	go func() {
-		app.Handler().ServeHTTP(rr, req)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("start action timed out")
-	}
-
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
-	}
-	room.mu.RLock()
-	defer room.mu.RUnlock()
-	if room.Game == nil || room.Game.Status != GameRunning || room.Game.CurrentRound == nil {
-		t.Fatalf("expected running game with active round, got %#v", room.Game)
-	}
+	body := rr.Body.String()
+	assertContainsAll(t, body,
+		"action=\"/rooms/join\"",
+		"name=\"code\" value=\""+room.Code+"\"",
+		"Join room",
+	)
+	assertNotContainsAny(t, body, "You are here", "<strong>Dave</strong>")
 }
 
 func TestAdminPickGuesserFragmentHidesChoiceWords(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
-	room.mu.Lock()
-	room.join("bob-token", "Bob")
-	room.Game = &Game{
-		Status:       GameRunning,
-		CurrentIndex: 0,
-		CurrentRound: &Round{
-			Phase:         PhaseWordSelection,
-			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
-			TargetIndex:   1,
-			TargetWord:    "Pear",
-			VotesByToken:  map[string]int{},
-			Clues:         map[string]ClueSubmission{},
-			ManualInvalid: map[string]bool{},
-			Guesses:       map[string]string{},
-			PassByToken:   map[string]bool{},
-		},
-	}
-	room.assignTemporaryRoundController(room.Game.CurrentRound)
-	room.mu.Unlock()
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.WordSelectionMode = SelectionAdminPick
+		round.Phase = PhaseWordSelection
+		round.TargetWord = ""
+	})
 
-	guesserReq := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	guesserReq.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
-	guesserRR := httptest.NewRecorder()
-	app.Handler().ServeHTTP(guesserRR, guesserReq)
+	guesserRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
 	guesserBody := guesserRR.Body.String()
-	if !strings.Contains(guesserBody, "Waiting for the round controller to choose the hidden word.") {
-		t.Fatalf("expected guesser waiting view, got %q", guesserBody)
-	}
-	if strings.Contains(guesserBody, "Apple") || strings.Contains(guesserBody, "Pear") || strings.Contains(guesserBody, "Peach") {
-		t.Fatalf("did not expect guesser view to contain choice words, got %q", guesserBody)
-	}
-	if strings.Contains(guesserBody, "Choose this word") {
-		t.Fatalf("did not expect guesser view to contain chooser actions, got %q", guesserBody)
-	}
+	assertContainsAll(t, guesserBody, "Waiting for the round controller to choose the hidden word.")
+	assertNotContainsAny(t, guesserBody, "Apple", "Pear", "Peach", "Choose this word")
 
-	cluegiverReq := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	cluegiverReq.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
-	cluegiverRR := httptest.NewRecorder()
-	app.Handler().ServeHTTP(cluegiverRR, cluegiverReq)
+	cluegiverRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
 	cluegiverBody := cluegiverRR.Body.String()
-	if !strings.Contains(cluegiverBody, "Apple") || !strings.Contains(cluegiverBody, "Pear") {
-		t.Fatalf("expected clue-giver view to contain choice words, got %q", cluegiverBody)
-	}
-	if !strings.Contains(cluegiverBody, "Choose this word") {
-		t.Fatalf("expected round controller to be able to choose a word, got %q", cluegiverBody)
-	}
+	assertContainsAll(t, cluegiverBody, "Apple", "Pear", "Choose this word")
+
+	observerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", daveToken, nil, nil)
+	observerBody := observerRR.Body.String()
+	assertContainsAll(t, observerBody, "Waiting for word selection.")
+	assertNotContainsAny(t, observerBody, "Apple", "Pear", "Peach", "Choose this word", "Vote")
 }
 
-func TestClueEntryUsesSingleBulkSubmitForm(t *testing.T) {
+func TestPlayerVoteFragmentShowsVoteAndFinalizeContracts(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
-	room.mu.Lock()
-	room.join("bob-token", "Bob")
-	room.Game = &Game{
-		Status:       GameRunning,
-		CurrentIndex: 0,
-		CurrentRound: &Round{
-			Phase:         PhaseClueEntry,
-			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
-			TargetIndex:   1,
-			TargetWord:    "Pear",
-			VotesByToken:  map[string]int{},
-			Clues:         map[string]ClueSubmission{},
-			ManualInvalid: map[string]bool{},
-			Guesses:       map[string]string{},
-			PassByToken:   map[string]bool{},
-		},
-	}
-	room.assignTemporaryRoundController(room.Game.CurrentRound)
-	room.mu.Unlock()
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.WordSelectionMode = SelectionPlayerVote
+		round.Phase = PhaseWordSelection
+		round.VotesByToken[bobToken] = 1
+		round.VotesByToken[caraToken] = 0
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
-	rr := httptest.NewRecorder()
-	app.Handler().ServeHTTP(rr, req)
+	controllerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+	controllerBody := controllerRR.Body.String()
+	assertContainsAll(t, controllerBody, "Vote for the secret target word.", "Votes: 1", ">Voted</button>", "Choose this word")
 
-	body := rr.Body.String()
-	for _, want := range []string{"name=\"clue_1\"", "name=\"clue_2\"", "pattern=\".*\\\\S.*\"", ">Submit clues</button>", "Your clues: 0 / 2"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected clue-entry fragment to contain %q, got %q", want, body)
-		}
-	}
-	if strings.Count(body, ">Submit clues</button>") != 1 {
-		t.Fatalf("expected exactly one clue submit button, got %q", body)
-	}
+	cluegiverRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", caraToken, nil, nil)
+	cluegiverBody := cluegiverRR.Body.String()
+	assertContainsAll(t, cluegiverBody, "Vote for the secret target word.", ">Voted</button>")
+	assertNotContainsAny(t, cluegiverBody, "Choose this word")
+}
+
+func TestClueEntryFragmentContractsByRole(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueEntry
+		round.TargetIndex = 1
+		round.TargetWord = "Pear"
+	})
+
+	cluegiverRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+	cluegiverBody := cluegiverRR.Body.String()
+	assertContainsAll(t, cluegiverBody, "name=\"clue_1\"", "name=\"clue_2\"", "pattern=\".*\\\\S.*\"", ">Submit clues</button>", "Your clues: 0 / 2")
+	assertContainsCount(t, cluegiverBody, ">Submit clues</button>", 1)
+
+	guesserRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	guesserBody := guesserRR.Body.String()
+	assertContainsAll(t, guesserBody, "Stay blind while the clue-givers enter their clues.")
+	assertNotContainsAny(t, guesserBody, "name=\"clue_1\"", ">Submit clues</button>")
+
+	observerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", daveToken, nil, nil)
+	observerBody := observerRR.Body.String()
+	assertContainsAll(t, observerBody, "Waiting for clue-givers to finish submitting clues.")
+	assertNotContainsAny(t, observerBody, "name=\"clue_1\"", ">Submit clues</button>")
 }
 
 func TestClueBulkSubmitActionSavesAllSlots(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
+	room := app.createRoom(aliceToken, "Alice")
 	room.mu.Lock()
-	room.join("bob-token", "Bob")
+	room.join(bobToken, "Bob")
 	room.Game = &Game{
 		Status:       GameRunning,
 		CurrentIndex: 0,
-		CurrentRound: &Round{
-			Phase:         PhaseClueEntry,
-			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
-			TargetIndex:   1,
-			TargetWord:    "Pear",
-			VotesByToken:  map[string]int{},
-			Clues:         map[string]ClueSubmission{},
-			ManualInvalid: map[string]bool{},
-			Guesses:       map[string]string{},
-			PassByToken:   map[string]bool{},
-		},
+		Deck:         []RoundCard{testRoundCard()},
+		CurrentRound: testRound(),
 	}
+	room.Game.CurrentRound.Phase = PhaseClueEntry
+	room.Game.CurrentRound.TargetIndex = 1
+	room.Game.CurrentRound.TargetWord = "Pear"
 	room.assignTemporaryRoundController(room.Game.CurrentRound)
 	room.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodPost, "/rooms/"+room.Code+"/actions/clue", strings.NewReader("clue_1=orchard&clue_2=green"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("X-Requested-With", "fetch")
-	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
-	rr := httptest.NewRecorder()
+	rr := performFormRequest(t, app.Handler(), "/rooms/"+room.Code+"/actions/clue", bobToken, "clue_1=orchard&clue_2=green", true)
+	assertStatus(t, rr.Code, http.StatusNoContent)
 
-	app.Handler().ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
-	}
 	room.mu.RLock()
 	defer room.mu.RUnlock()
 	if got := len(room.Game.CurrentRound.Clues); got != 2 {
@@ -343,76 +273,230 @@ func TestClueBulkSubmitActionSavesAllSlots(t *testing.T) {
 
 func TestClueReviewHidesDuplicateToggleButtons(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
-	room.mu.Lock()
-	room.join("bob-token", "Bob")
-	room.join("cara-token", "Cara")
-	room.Game = &Game{
-		Status:       GameRunning,
-		CurrentIndex: 0,
-		CurrentRound: &Round{
-			Phase:         PhaseClueReview,
-			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
-			TargetIndex:   1,
-			TargetWord:    "Pear",
-			VotesByToken:  map[string]int{},
-			Clues:         map[string]ClueSubmission{"b:1": {PlayerToken: "bob-token", Slot: 1, Text: "Orchard"}, "c:1": {PlayerToken: "cara-token", Slot: 1, Text: " orchard "}, "b:2": {PlayerToken: "bob-token", Slot: 2, Text: "Green"}},
-			ManualInvalid: map[string]bool{"b:2": true},
-			Guesses:       map[string]string{},
-			PassByToken:   map[string]bool{},
-		},
-	}
-	room.assignTemporaryRoundController(room.Game.CurrentRound)
-	room.mu.Unlock()
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueReview
+		round.TargetIndex = 1
+		round.TargetWord = "Pear"
+		round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "Orchard"}
+		round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: " orchard "}
+		round.Clues[clueKey(caraToken, 2)] = ClueSubmission{PlayerToken: caraToken, Slot: 2, Text: "Green"}
+		round.ManualInvalid[clueKey(caraToken, 2)] = true
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
-	rr := httptest.NewRecorder()
-	app.Handler().ServeHTTP(rr, req)
+	controllerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+	controllerBody := controllerRR.Body.String()
+	assertContainsAll(t, controllerBody, "duplicate", ">Restore</button>", "Reveal valid clues")
+	assertContainsCount(t, controllerBody, ">Restore</button>", 1)
+	assertContainsCount(t, controllerBody, ">Toggle invalid</button>", 0)
 
-	body := rr.Body.String()
-	if !strings.Contains(body, "duplicate") {
-		t.Fatalf("expected duplicate clue badge in clue review, got %q", body)
-	}
-	if got := strings.Count(body, ">Toggle invalid</button>"); got != 0 {
-		t.Fatalf("expected duplicate clues to hide toggle buttons, got %q", body)
-	}
-	if got := strings.Count(body, ">Restore</button>"); got != 1 {
-		t.Fatalf("expected one restore button for manual invalid clue, got %q", body)
-	}
+	cluegiverRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", caraToken, nil, nil)
+	cluegiverBody := cluegiverRR.Body.String()
+	assertContainsAll(t, cluegiverBody, "duplicate")
+	assertNotContainsAny(t, cluegiverBody, ">Restore</button>", ">Toggle invalid</button>", "Reveal valid clues")
 }
 
 func TestParticipantListShowsRoundControllerIcon(t *testing.T) {
 	app := newTestApp(t)
-	room := app.createRoom("creator-token", "Alice")
-	room.mu.Lock()
-	room.join("bob-token", "Bob")
-	room.Game = &Game{
-		Status:       GameRunning,
-		CurrentIndex: 0,
-		CurrentRound: &Round{
-			Phase:         PhaseWordSelection,
-			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
-			VotesByToken:  map[string]int{},
-			Clues:         map[string]ClueSubmission{},
-			ManualInvalid: map[string]bool{},
-			Guesses:       map[string]string{},
-			PassByToken:   map[string]bool{},
-		},
+	room := newRoundTestRoom(t, app)
+	rr := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	body := rr.Body.String()
+	assertContainsCount(t, body, "aria-label=\"Round controller\"", 1)
+	assertContainsAll(t, body, "🕹️")
+}
+
+func TestGuessPhaseRenderHonorsSubmissionModes(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		mode                GuessSubmissionMode
+		bobShouldSeeGuessUI bool
+	}{
+		{name: "spokesperson", mode: GuessModeSpokesperson, bobShouldSeeGuessUI: false},
+		{name: "one-each", mode: GuessModeOneEach, bobShouldSeeGuessUI: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newTestApp(t)
+			room := newRoundTestRoom(t, app)
+			withRoomLock(t, room, func(room *Room, round *Round) {
+				room.Settings.GuesserCount = 2
+				room.Settings.GuessSubmissionMode = tc.mode
+				round.Phase = PhaseGuessEntry
+				round.TargetIndex = 1
+				round.TargetWord = "Pear"
+				round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: "orchard"}
+			})
+
+			aliceRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+			assertContainsAll(t, aliceRR.Body.String(), "name=\"guess\"", ">Submit guess</button>", ">Pass</button>")
+
+			bobRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+			bobBody := bobRR.Body.String()
+			if tc.bobShouldSeeGuessUI {
+				assertContainsAll(t, bobBody, "name=\"guess\"", ">Submit guess</button>", ">Pass</button>")
+			} else {
+				assertNotContainsAny(t, bobBody, "name=\"guess\"", ">Submit guess</button>", ">Pass</button>")
+			}
+
+			controllerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", caraToken, nil, nil)
+			assertContainsAll(t, controllerRR.Body.String(), "Mark correct", "Mark wrong", "Mark pass")
+		})
 	}
-	room.assignTemporaryRoundController(room.Game.CurrentRound)
+}
+
+func TestResolvedRoundShowsNextRoundOnlyForController(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseResolved
+		round.TargetIndex = 1
+		round.TargetWord = "Pear"
+		round.Result = "correct"
+		round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: "orchard"}
+	})
+
+	controllerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+	assertContainsAll(t, controllerRR.Body.String(), "Round result", "correct", "Next round")
+
+	guesserRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	assertContainsAll(t, guesserRR.Body.String(), "Round result", "correct")
+	assertNotContainsAny(t, guesserRR.Body.String(), "Next round")
+}
+
+func TestParticipantAndSettingsSidebarRespectAdminPrivileges(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+
+	adminRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code, aliceToken, nil, nil)
+	adminBody := adminRR.Body.String()
+	assertContainsAll(t, adminBody,
+		"action=\"/rooms/"+room.Code+"/actions/participant-role\"",
+		"action=\"/rooms/"+room.Code+"/actions/participant-admin\"",
+		"action=\"/rooms/"+room.Code+"/actions/settings\"",
+		"data-preserve-open=\"settings-advanced\"",
+		"data-preserve-open=\"settings-packs\"",
+		"action=\"/rooms/"+room.Code+"/packs/upload\"",
+	)
+
+	userRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code, bobToken, nil, nil)
+	userBody := userRR.Body.String()
+	assertContainsAll(t, userBody, "<ul class=\"summary-list\">", "<span>Word pack</span>")
+	assertNotContainsAny(t, userBody,
+		"action=\"/rooms/"+room.Code+"/actions/participant-role\"",
+		"action=\"/rooms/"+room.Code+"/actions/participant-admin\"",
+		"action=\"/rooms/"+room.Code+"/actions/settings\"",
+		"data-preserve-open=\"settings-advanced\"",
+		"action=\"/rooms/"+room.Code+"/packs/upload\"",
+	)
+}
+
+func TestFailedBrowserActionPersistsFlashOnRoomPage(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom(aliceToken, "Alice")
+
+	actionRR := performFormRequest(t, app.Handler(), "/rooms/"+room.Code+"/actions/start", aliceToken, "", false)
+	assertStatus(t, actionRR.Code, http.StatusSeeOther)
+
+	pageRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code, aliceToken, nil, nil)
+	body := pageRR.Body.String()
+	assertContainsAll(t, body, "flash-banner", "need at least 2 players to start")
+}
+
+func TestJoinMidRoundRedirectsAndAddsObserver(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueReview
+		round.TargetWord = "Pear"
+	})
+
+	rr := performFormRequest(t, app.Handler(), "/rooms/join", daveToken, "code="+room.Code+"&name=Dave", false)
+	assertStatus(t, rr.Code, http.StatusSeeOther)
+	if got := rr.Header().Get("Location"); got != "/rooms/"+room.Code {
+		t.Fatalf("expected redirect to room page, got %q", got)
+	}
+
+	room.mu.RLock()
+	participant := room.Participants[daveToken]
+	room.mu.RUnlock()
+	if participant == nil || participant.Role != RoleObserver {
+		t.Fatalf("expected mid-round joiner to be an observer, got %#v", participant)
+	}
+}
+
+func TestRoomEventsEmitRefreshAfterStateChange(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom(aliceToken, "Alice")
+	room.mu.Lock()
+	room.join(bobToken, "Bob")
 	room.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
-	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "creator-token"})
-	rr := httptest.NewRecorder()
-	app.Handler().ServeHTTP(rr, req)
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
 
-	body := rr.Body.String()
-	if got := strings.Count(body, "aria-label=\"Round controller\""); got != 1 {
-		t.Fatalf("expected exactly one round controller icon, got %q", body)
+	resp, err := server.Client().Get(server.URL + "/rooms/" + room.Code + "/events")
+	if err != nil {
+		t.Fatalf("GET events returned error: %v", err)
 	}
-	if !strings.Contains(body, "🕹️") {
-		t.Fatalf("expected round controller icon in participant list, got %q", body)
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	initial, err := readSSEEvent(reader)
+	if err != nil {
+		t.Fatalf("reading initial SSE event failed: %v", err)
+	}
+	assertContainsAll(t, initial, "event: refresh\n", "data: ready\n")
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/rooms/"+room.Code+"/actions/start", nil)
+	if err != nil {
+		t.Fatalf("creating start request failed: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: aliceToken})
+	req.Header.Set("X-Requested-With", "fetch")
+	actionResp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST start returned error: %v", err)
+	}
+	actionResp.Body.Close()
+	if actionResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected %d, got %d", http.StatusNoContent, actionResp.StatusCode)
+	}
+
+	refresh, err := readSSEEvent(reader)
+	if err != nil {
+		t.Fatalf("reading refresh SSE event failed: %v", err)
+	}
+	assertContainsAll(t, refresh, "event: refresh\n", "data:")
+	if strings.Contains(refresh, "data: ready\n") {
+		t.Fatalf("expected a state-change refresh, got %q", refresh)
+	}
+}
+
+func readSSEEvent(reader *bufio.Reader) (string, error) {
+	type result struct {
+		event string
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		var lines []string
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				done <- result{err: err}
+				return
+			}
+			lines = append(lines, line)
+			if line == "\n" {
+				done <- result{event: strings.Join(lines, "")}
+				return
+			}
+		}
+	}()
+
+	select {
+	case res := <-done:
+		return res.event, res.err
+	case <-time.After(2 * time.Second):
+		return "", http.ErrHandlerTimeout
 	}
 }

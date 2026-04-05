@@ -108,6 +108,139 @@ func newPermissionTestApp() *App {
 	}
 }
 
+func TestBuildRoomViewWordSelectionVisibilityByRole(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.WordSelectionMode = SelectionAdminPick
+		round.Phase = PhaseWordSelection
+		round.TargetWord = ""
+	})
+
+	aliceView := app.buildRoomView(room, aliceToken)
+	if !aliceView.IsAdmin {
+		t.Fatal("expected creator guesser to remain an admin")
+	}
+	if aliceView.Round == nil || !aliceView.Round.ActiveGuesser {
+		t.Fatalf("expected active guesser round view, got %#v", aliceView.Round)
+	}
+	if aliceView.Round.CanManageRound || aliceView.Round.CanSeeChoiceWords || aliceView.Round.CanSeeTarget {
+		t.Fatalf("expected guesser hidden-info protections, got %#v", aliceView.Round)
+	}
+	if len(aliceView.Round.RoundControllers) != 1 || aliceView.Round.RoundControllers[0] != "Bob" {
+		t.Fatalf("expected Bob as temporary round controller, got %#v", aliceView.Round.RoundControllers)
+	}
+
+	bobView := app.buildRoomView(room, bobToken)
+	if bobView.Round == nil || !bobView.Round.EligibleCluegiver || !bobView.Round.CanManageRound {
+		t.Fatalf("expected Bob to be an eligible clue-giver and round controller, got %#v", bobView.Round)
+	}
+	if !bobView.Round.CanSeeChoiceWords {
+		t.Fatal("expected round controller clue-giver to see choice words")
+	}
+	if bobView.Round.CanSeeTarget {
+		t.Fatal("did not expect target word before selection")
+	}
+
+	daveView := app.buildRoomView(room, daveToken)
+	if daveView.ViewerRole != string(RoleObserver) {
+		t.Fatalf("expected observer viewer role, got %q", daveView.ViewerRole)
+	}
+	if daveView.Round == nil {
+		t.Fatal("expected round view for observer")
+	}
+	if daveView.Round.EligibleCluegiver || daveView.Round.ActiveGuesser || daveView.Round.CanManageRound || daveView.Round.CanSeeChoiceWords || daveView.Round.CanSeeTarget {
+		t.Fatalf("expected observer to stay outside hidden info and controls, got %#v", daveView.Round)
+	}
+}
+
+func TestBuildRoomViewPlayerVoteShowsVotesAndSelections(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.WordSelectionMode = SelectionPlayerVote
+		round.Phase = PhaseWordSelection
+		round.VotesByToken[bobToken] = 1
+		round.VotesByToken[caraToken] = 0
+	})
+
+	view := app.buildRoomView(room, bobToken)
+	if view.Round == nil {
+		t.Fatal("expected round view")
+	}
+	if !view.Round.EligibleCluegiver || !view.Round.CanManageRound || !view.Round.CanSeeChoiceWords {
+		t.Fatalf("expected voting clue-giver controller view, got %#v", view.Round)
+	}
+	if len(view.Round.ChoiceSlate) != 3 {
+		t.Fatalf("expected 3 visible choices, got %#v", view.Round.ChoiceSlate)
+	}
+	if !view.Round.ChoiceSlate[1].VotedByYou {
+		t.Fatalf("expected Bob's voted choice to be marked, got %#v", view.Round.ChoiceSlate)
+	}
+	if view.Round.ChoiceSlate[1].Votes != 1 || view.Round.ChoiceSlate[0].Votes != 1 {
+		t.Fatalf("expected aggregated vote counts, got %#v", view.Round.ChoiceSlate)
+	}
+}
+
+func TestBuildRoomViewResolvedRoundRevealsHiddenInfoToGuessers(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseResolved
+		round.TargetIndex = 1
+		round.TargetWord = "Pear"
+		round.Result = "correct"
+		round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "orchard"}
+		round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: "green"}
+		round.ManualInvalid[clueKey(caraToken, 1)] = true
+		room.Settings.ShowCardPoolToGuessers = false
+	})
+
+	view := app.buildRoomView(room, aliceToken)
+	if view.Round == nil {
+		t.Fatal("expected round view")
+	}
+	if !view.Round.CanSeeTarget || !view.Round.CanSeeChoiceWords {
+		t.Fatalf("expected resolved round to reveal target and slate, got %#v", view.Round)
+	}
+	if view.Round.CanSeeCardPool {
+		t.Fatal("did not expect card pool visibility without the setting enabled")
+	}
+	if len(view.Round.VisibleClues) != 1 || view.Round.VisibleClues[0] != "orchard" {
+		t.Fatalf("expected only valid clues to remain visible, got %#v", view.Round.VisibleClues)
+	}
+}
+
+func TestBuildRoomViewGuessPhaseTracksGuessesAndSpokesperson(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.GuesserCount = 2
+		room.Settings.GuessSubmissionMode = GuessModeOneEach
+		round.Phase = PhaseGuessEntry
+		round.TargetWord = "Pear"
+		round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: "orchard"}
+		round.Guesses[aliceToken] = "Peach"
+		round.PassByToken[bobToken] = true
+	})
+
+	aliceView := app.buildRoomView(room, aliceToken)
+	if aliceView.Round == nil || !aliceView.Round.ActiveGuesser || !aliceView.Round.Spokesperson {
+		t.Fatalf("expected Alice to be the spokesperson guesser, got %#v", aliceView.Round)
+	}
+	if len(aliceView.Round.Guesses) != 2 {
+		t.Fatalf("expected both guessers to be shown in the guess list, got %#v", aliceView.Round.Guesses)
+	}
+	if got := aliceView.Round.ActiveGuessers; len(got) != 2 || got[0] != "Alice" || got[1] != "Bob" {
+		t.Fatalf("unexpected active guesser names: %#v", got)
+	}
+
+	bobView := app.buildRoomView(room, bobToken)
+	if bobView.Round == nil || !bobView.Round.ActiveGuesser || bobView.Round.Spokesperson {
+		t.Fatalf("expected Bob to be an active non-spokesperson guesser, got %#v", bobView.Round)
+	}
+}
+
 func TestAdminGuesserLosesHiddenInfoAndRoundControls(t *testing.T) {
 	room := newPermissionTestRoom()
 	view := newPermissionTestApp().buildRoomView(room, "a")
@@ -231,5 +364,77 @@ func TestSubmitCluesTrimsWhitespaceBeforeSaving(t *testing.T) {
 	}
 	if got := room.Game.CurrentRound.Clues["b:2"].Text; got != "green" {
 		t.Fatalf("expected second clue to be trimmed, got %q", got)
+	}
+}
+
+func TestSubmitGuessSpokespersonModeBlocksOtherGuessers(t *testing.T) {
+	room := newRoundTestRoom(t, newTestApp(t))
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.GuesserCount = 2
+		room.Settings.GuessSubmissionMode = GuessModeSpokesperson
+		round.Phase = PhaseGuessEntry
+		round.TargetWord = "Pear"
+	})
+
+	if _, err := room.submitGuess(bobToken, "Pear", false); err == nil {
+		t.Fatal("expected non-spokesperson guesser to be blocked")
+	}
+}
+
+func TestSubmitGuessOneEachAllowsEachGuesser(t *testing.T) {
+	room := newRoundTestRoom(t, newTestApp(t))
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.GuesserCount = 2
+		room.Settings.GuessSubmissionMode = GuessModeOneEach
+		round.Phase = PhaseGuessEntry
+		round.TargetWord = "Pear"
+	})
+
+	if resolved, err := room.submitGuess(bobToken, "Peach", false); err != nil || resolved {
+		t.Fatalf("expected non-spokesperson guesser to submit a guess without auto-resolving, got resolved=%v err=%v", resolved, err)
+	}
+	if got := room.Game.CurrentRound.Guesses[bobToken]; got != "Peach" {
+		t.Fatalf("expected Bob's guess to be stored, got %q", got)
+	}
+}
+
+func TestSubmitGuessAutoExactResolvesCorrectGuess(t *testing.T) {
+	room := newRoundTestRoom(t, newTestApp(t))
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.GuessSubmissionMode = GuessModeSpokesperson
+		room.Settings.GuessResolutionMode = GuessResolutionAutoExact
+		round.Phase = PhaseGuessEntry
+		round.TargetWord = "Pear"
+	})
+
+	resolved, err := room.submitGuess(aliceToken, " pear ", false)
+	if err != nil {
+		t.Fatalf("expected exact guess to succeed: %v", err)
+	}
+	if !resolved {
+		t.Fatal("expected exact guess to resolve the round")
+	}
+	if room.Game.CurrentRound.Phase != PhaseResolved || room.Game.CurrentRound.Result != "correct" {
+		t.Fatalf("expected resolved correct round, got %#v", room.Game.CurrentRound)
+	}
+}
+
+func TestSubmitGuessPassResolvesForSpokespersonMode(t *testing.T) {
+	room := newRoundTestRoom(t, newTestApp(t))
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		room.Settings.GuessSubmissionMode = GuessModeSpokesperson
+		round.Phase = PhaseGuessEntry
+		round.TargetWord = "Pear"
+	})
+
+	resolved, err := room.submitGuess(aliceToken, "", true)
+	if err != nil {
+		t.Fatalf("expected spokesperson pass to succeed: %v", err)
+	}
+	if !resolved {
+		t.Fatal("expected spokesperson pass to resolve the round")
+	}
+	if room.Game.CurrentRound.Result != "pass" {
+		t.Fatalf("expected pass result, got %#v", room.Game.CurrentRound)
 	}
 }
