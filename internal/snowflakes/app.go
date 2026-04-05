@@ -95,7 +95,8 @@ const (
 	GuessResolutionAutoExact GuessResolutionMode = "auto_exact_else_admin"
 	GuessResolutionAdminOnly GuessResolutionMode = "admin_only"
 
-	SelectionBlindSlot  WordSelectionMode = "blind_slot"
+	SelectionAdminPick  WordSelectionMode = "admin_pick"
+	SelectionBlindSlot  WordSelectionMode = "blind_slot" // legacy alias, normalized to admin_pick
 	SelectionPlayerVote WordSelectionMode = "player_vote"
 
 	ClueSlotsAuto  ClueSlotsMode = "auto"
@@ -237,7 +238,7 @@ func defaultRoomSettings() RoomSettings {
 		FixedClueSlots:         1,
 		GuessSubmissionMode:    GuessModeSpokesperson,
 		GuessResolutionMode:    GuessResolutionAutoExact,
-		WordSelectionMode:      SelectionBlindSlot,
+		WordSelectionMode:      SelectionAdminPick,
 		CardPoolSize:           5,
 		ChoiceSlateSize:        5,
 		ShowCardPoolToGuessers: false,
@@ -326,6 +327,13 @@ func normalizeText(s string) string {
 
 func clueKey(token string, slot int) string {
 	return fmt.Sprintf("%s:%d", token, slot)
+}
+
+func normalizeWordSelectionMode(mode WordSelectionMode) WordSelectionMode {
+	if mode == SelectionBlindSlot {
+		return SelectionAdminPick
+	}
+	return mode
 }
 
 func (r *Room) notify() {
@@ -667,17 +675,23 @@ func (r *Room) round() *Round {
 	return r.Game.CurrentRound
 }
 
-func (r *Room) chooseBlindSlot(token string, idx int) error {
+func (r *Room) chooseWord(requester string, idx int) error {
 	round := r.round()
 	if round == nil || round.Phase != PhaseWordSelection {
 		return errors.New("not in word selection")
 	}
-	guessers := r.activeGuessers(round)
-	if len(guessers) == 0 || guessers[0] != token {
-		return errors.New("only the spokesperson guesser can choose the slot")
+	mode := normalizeWordSelectionMode(r.Settings.WordSelectionMode)
+	if mode != SelectionAdminPick && mode != SelectionPlayerVote {
+		return errors.New("word selection mode is invalid")
+	}
+	if !r.canManageRound(round, requester) {
+		return errors.New("round controller required")
+	}
+	if mode == SelectionPlayerVote && round.Phase == PhaseWordSelection && idx >= 0 && idx < len(round.Card.Slate) {
+		// allow the round controller to finalize any visible choice without extra vote requirements
 	}
 	if idx < 0 || idx >= len(round.Card.Slate) {
-		return errors.New("invalid slot")
+		return errors.New("invalid choice")
 	}
 	round.TargetIndex = idx
 	round.TargetWord = round.Card.Slate[idx]
@@ -687,7 +701,7 @@ func (r *Room) chooseBlindSlot(token string, idx int) error {
 
 func (r *Room) castVote(token string, idx int) error {
 	round := r.round()
-	if round == nil || round.Phase != PhaseWordSelection || r.Settings.WordSelectionMode != SelectionPlayerVote {
+	if round == nil || round.Phase != PhaseWordSelection || normalizeWordSelectionMode(r.Settings.WordSelectionMode) != SelectionPlayerVote {
 		return errors.New("voting is not available")
 	}
 	if !slices.Contains(r.eligibleCluegivers(round), token) {
@@ -697,23 +711,6 @@ func (r *Room) castVote(token string, idx int) error {
 		return errors.New("invalid choice")
 	}
 	round.VotesByToken[token] = idx
-	return nil
-}
-
-func (r *Room) finalizeVotedWord(requester string, idx int) error {
-	round := r.round()
-	if !r.canManageRound(round, requester) {
-		return errors.New("round controller required")
-	}
-	if round == nil || round.Phase != PhaseWordSelection || r.Settings.WordSelectionMode != SelectionPlayerVote {
-		return errors.New("not in player vote mode")
-	}
-	if idx < 0 || idx >= len(round.Card.Slate) {
-		return errors.New("invalid choice")
-	}
-	round.TargetIndex = idx
-	round.TargetWord = round.Card.Slate[idx]
-	round.Phase = PhaseClueEntry
 	return nil
 }
 

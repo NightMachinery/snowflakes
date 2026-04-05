@@ -25,6 +25,13 @@ func TestBuildDeckRequiresEnoughWords(t *testing.T) {
 	}
 }
 
+func TestDefaultRoomSettingsUsesAdminPick(t *testing.T) {
+	settings := defaultRoomSettings()
+	if settings.WordSelectionMode != SelectionAdminPick {
+		t.Fatalf("expected default word selection mode %q, got %q", SelectionAdminPick, settings.WordSelectionMode)
+	}
+}
+
 func TestDetectInvalidCluesMarksDuplicatesAndManualInvalid(t *testing.T) {
 	round := &Round{
 		Clues: map[string]ClueSubmission{
@@ -114,21 +121,21 @@ func TestAdminGuesserLosesHiddenInfoAndRoundControls(t *testing.T) {
 
 func TestTemporaryRoundControllerCanManageRound(t *testing.T) {
 	room := newPermissionTestRoom()
-	room.Settings.WordSelectionMode = SelectionPlayerVote
+	room.Settings.WordSelectionMode = SelectionAdminPick
 	room.Game.CurrentRound.TargetIndex = 0
 	room.Game.CurrentRound.TargetWord = ""
 
-	if err := room.finalizeVotedWord("a", 0); err == nil {
-		t.Fatal("expected active admin guesser to be blocked from finalizing the round word")
+	if err := room.chooseWord("a", 0); err == nil {
+		t.Fatal("expected active admin guesser to be blocked from choosing the round word")
 	}
-	if err := room.finalizeVotedWord("b", 0); err != nil {
-		t.Fatalf("expected temporary round controller to finalize the round word: %v", err)
+	if err := room.chooseWord("b", 0); err != nil {
+		t.Fatalf("expected temporary round controller to choose the round word: %v", err)
 	}
 	if room.Game.CurrentRound.Phase != PhaseClueEntry {
 		t.Fatalf("expected round to advance to clue entry, got %s", room.Game.CurrentRound.Phase)
 	}
 	if room.Game.CurrentRound.TargetWord != "Apple" {
-		t.Fatalf("expected target word to be finalized, got %q", room.Game.CurrentRound.TargetWord)
+		t.Fatalf("expected target word to be chosen, got %q", room.Game.CurrentRound.TargetWord)
 	}
 }
 

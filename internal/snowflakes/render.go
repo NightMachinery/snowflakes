@@ -161,7 +161,7 @@ func (a *App) buildRoomView(room *Room, viewerToken string) RoomView {
 			FixedClueSlots:         room.Settings.FixedClueSlots,
 			GuessSubmissionMode:    string(room.Settings.GuessSubmissionMode),
 			GuessResolutionMode:    string(room.Settings.GuessResolutionMode),
-			WordSelectionMode:      string(room.Settings.WordSelectionMode),
+			WordSelectionMode:      string(normalizeWordSelectionMode(room.Settings.WordSelectionMode)),
 			CardPoolSize:           room.Settings.CardPoolSize,
 			ChoiceSlateSize:        room.Settings.ChoiceSlateSize,
 			ShowCardPoolToGuessers: room.Settings.ShowCardPoolToGuessers,

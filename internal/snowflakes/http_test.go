@@ -204,7 +204,7 @@ func TestStartActionReturnsAndStartsRound(t *testing.T) {
 	}
 }
 
-func TestBlindSlotGuesserFragmentHidesChoiceWords(t *testing.T) {
+func TestAdminPickGuesserFragmentHidesChoiceWords(t *testing.T) {
 	app := newTestApp(t)
 	room := app.createRoom("creator-token", "Alice")
 	room.mu.Lock()
@@ -232,11 +232,14 @@ func TestBlindSlotGuesserFragmentHidesChoiceWords(t *testing.T) {
 	guesserRR := httptest.NewRecorder()
 	app.Handler().ServeHTTP(guesserRR, guesserReq)
 	guesserBody := guesserRR.Body.String()
-	if !strings.Contains(guesserBody, "Hidden word") {
-		t.Fatalf("expected guesser view to hide selection words, got %q", guesserBody)
+	if !strings.Contains(guesserBody, "Waiting for the round controller to choose the hidden word.") {
+		t.Fatalf("expected guesser waiting view, got %q", guesserBody)
 	}
 	if strings.Contains(guesserBody, "Apple") || strings.Contains(guesserBody, "Pear") || strings.Contains(guesserBody, "Peach") {
 		t.Fatalf("did not expect guesser view to contain choice words, got %q", guesserBody)
+	}
+	if strings.Contains(guesserBody, "Choose this word") {
+		t.Fatalf("did not expect guesser view to contain chooser actions, got %q", guesserBody)
 	}
 
 	cluegiverReq := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
@@ -246,5 +249,8 @@ func TestBlindSlotGuesserFragmentHidesChoiceWords(t *testing.T) {
 	cluegiverBody := cluegiverRR.Body.String()
 	if !strings.Contains(cluegiverBody, "Apple") || !strings.Contains(cluegiverBody, "Pear") {
 		t.Fatalf("expected clue-giver view to contain choice words, got %q", cluegiverBody)
+	}
+	if !strings.Contains(cluegiverBody, "Choose this word") {
+		t.Fatalf("expected round controller to be able to choose a word, got %q", cluegiverBody)
 	}
 }

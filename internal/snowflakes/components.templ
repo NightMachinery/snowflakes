@@ -167,34 +167,32 @@ templ roomInner(view RoomView) {
 						}
 
 						if view.Round.Phase == "word_selection" {
-							if view.Settings.WordSelectionMode == "blind_slot" {
-								if view.Round.Spokesperson {
-									<p class="lead">Pick a slot number blindly. Guessers never see the words behind the slots.</p>
+							if view.Settings.WordSelectionMode == "admin_pick" {
+								if view.Round.CanManageRound {
+									<p class="lead">Choose the hidden word from the visible list. Active guessers stay blind.</p>
 								} else if view.Round.ActiveGuesser {
-									<p class="lead">Waiting for the spokesperson to choose a slot number.</p>
+									<p class="lead">Waiting for the round controller to choose the hidden word.</p>
 								} else if view.Round.EligibleCluegiver {
-									<p class="lead">Review the possible words while the spokesperson picks a hidden slot.</p>
+									<p class="lead">Review the possible words while the round controller chooses the hidden word.</p>
 								} else {
 									<p class="lead">Waiting for word selection.</p>
 								}
-								<div class="choice-grid">
-									for _, choice := range view.Round.ChoiceSlate {
-										<div class="choice-card">
-											<span class="eyebrow">Slot { itoa(choice.DisplayNumber) }</span>
-											if view.Round.CanSeeChoiceWords {
+								if view.Round.CanSeeChoiceWords {
+									<div class="choice-grid">
+										for _, choice := range view.Round.ChoiceSlate {
+											<div class="choice-card">
+												<span class="eyebrow">Choice { itoa(choice.DisplayNumber) }</span>
 												<strong>{ choice.Word }</strong>
-											} else {
-												<strong>Hidden word</strong>
-											}
-											if view.Round.Spokesperson {
-												<form method="post" action={ roomActionPath(view.Code, "blind") } data-ajax="true">
-													<input type="hidden" name="index" value={ itoa(choice.Index) }/>
-													<button type="submit">Pick slot { itoa(choice.DisplayNumber) }</button>
-												</form>
-											}
-										</div>
-									}
-								</div>
+												if view.Round.CanManageRound {
+													<form method="post" action={ roomActionPath(view.Code, "finalize") } data-ajax="true">
+														<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+														<button type="submit">Choose this word</button>
+													</form>
+												}
+											</div>
+										}
+									</div>
+								}
 							} else {
 								if view.Round.EligibleCluegiver {
 									<p class="lead">Vote for the secret target word. Guessers stay blind until clues are ready.</p>
@@ -455,7 +453,7 @@ templ roomInner(view RoomView) {
 							<label>Guessers <input type="number" min="1" name="guesser_count" value={ itoa(view.Settings.GuesserCount) }/></label>
 							<label>Word selection mode
 								<select name="word_selection_mode">
-									<option value="blind_slot" selected?={ view.Settings.WordSelectionMode == "blind_slot" }>blind slot</option>
+									<option value="admin_pick" selected?={ view.Settings.WordSelectionMode == "admin_pick" }>admin picks</option>
 									<option value="player_vote" selected?={ view.Settings.WordSelectionMode == "player_vote" }>player vote</option>
 								</select>
 							</label>

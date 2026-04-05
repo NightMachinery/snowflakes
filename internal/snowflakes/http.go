@@ -173,15 +173,12 @@ func (a *App) handleRoomAction(w http.ResponseWriter, r *http.Request, room *Roo
 			return
 		}
 		actionError(room, room.startGame(a.rand, pack))
-	case "blind":
-		idx := mustInt(r.FormValue("index"), -1)
-		actionError(room, room.chooseBlindSlot(token, idx))
 	case "vote":
 		idx := mustInt(r.FormValue("index"), -1)
 		actionError(room, room.castVote(token, idx))
 	case "finalize":
 		idx := mustInt(r.FormValue("index"), -1)
-		actionError(room, room.finalizeVotedWord(token, idx))
+		actionError(room, room.chooseWord(token, idx))
 	case "clue":
 		slot := mustInt(r.FormValue("slot"), 1)
 		actionError(room, room.submitClue(token, slot, r.FormValue("text")))
@@ -246,7 +243,7 @@ func (a *App) updateSettings(room *Room, token string, r *http.Request) {
 	if mode := GuessResolutionMode(r.FormValue("guess_resolution_mode")); mode == GuessResolutionAdminOnly || mode == GuessResolutionAutoExact {
 		room.Settings.GuessResolutionMode = mode
 	}
-	if mode := WordSelectionMode(r.FormValue("word_selection_mode")); mode == SelectionBlindSlot || mode == SelectionPlayerVote {
+	if mode := normalizeWordSelectionMode(WordSelectionMode(r.FormValue("word_selection_mode"))); mode == SelectionAdminPick || mode == SelectionPlayerVote {
 		room.Settings.WordSelectionMode = mode
 	}
 	if mode := ClueSlotsMode(r.FormValue("clue_slots_mode")); mode == ClueSlotsAuto || mode == ClueSlotsFixed {
