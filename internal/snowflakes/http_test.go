@@ -254,3 +254,86 @@ func TestAdminPickGuesserFragmentHidesChoiceWords(t *testing.T) {
 		t.Fatalf("expected round controller to be able to choose a word, got %q", cluegiverBody)
 	}
 }
+
+func TestClueEntryUsesSingleBulkSubmitForm(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom("creator-token", "Alice")
+	room.mu.Lock()
+	room.join("bob-token", "Bob")
+	room.Game = &Game{
+		Status:       GameRunning,
+		CurrentIndex: 0,
+		CurrentRound: &Round{
+			Phase:         PhaseClueEntry,
+			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
+			TargetIndex:   1,
+			TargetWord:    "Pear",
+			VotesByToken:  map[string]int{},
+			Clues:         map[string]ClueSubmission{},
+			ManualInvalid: map[string]bool{},
+			Guesses:       map[string]string{},
+			PassByToken:   map[string]bool{},
+		},
+	}
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+	room.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.Code+"/fragment", nil)
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
+	rr := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	for _, want := range []string{"name=\"clue_1\"", "name=\"clue_2\"", ">Submit clues</button>", "Your clues: 0 / 2"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected clue-entry fragment to contain %q, got %q", want, body)
+		}
+	}
+	if strings.Count(body, ">Submit clues</button>") != 1 {
+		t.Fatalf("expected exactly one clue submit button, got %q", body)
+	}
+}
+
+func TestClueBulkSubmitActionSavesAllSlots(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom("creator-token", "Alice")
+	room.mu.Lock()
+	room.join("bob-token", "Bob")
+	room.Game = &Game{
+		Status:       GameRunning,
+		CurrentIndex: 0,
+		CurrentRound: &Round{
+			Phase:         PhaseClueEntry,
+			Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
+			TargetIndex:   1,
+			TargetWord:    "Pear",
+			VotesByToken:  map[string]int{},
+			Clues:         map[string]ClueSubmission{},
+			ManualInvalid: map[string]bool{},
+			Guesses:       map[string]string{},
+			PassByToken:   map[string]bool{},
+		},
+	}
+	room.assignTemporaryRoundController(room.Game.CurrentRound)
+	room.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/rooms/"+room.Code+"/actions/clue", strings.NewReader("clue_1=orchard&clue_2=green"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Requested-With", "fetch")
+	req.AddCookie(&http.Cookie{Name: "snowflakes_auth_token", Value: "bob-token"})
+	rr := httptest.NewRecorder()
+
+	app.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected %d, got %d", http.StatusNoContent, rr.Code)
+	}
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	if got := len(room.Game.CurrentRound.Clues); got != 2 {
+		t.Fatalf("expected 2 saved clues, got %d", got)
+	}
+	if !room.allCluesSubmitted(room.Game.CurrentRound) {
+		t.Fatal("expected cluegiver to have completed all clue slots")
+	}
+}

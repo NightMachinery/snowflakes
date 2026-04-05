@@ -239,30 +239,22 @@ templ roomInner(view RoomView) {
 
 						if view.Round.Phase == "clue_entry" {
 							if view.Round.EligibleCluegiver {
-								<p class="lead">Submit concise clues. Matching clues are automatically invalidated in review.</p>
-								<div class="stacked">
-									if view.Round.ClueSlots >= 1 {
-										<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
-											<input type="hidden" name="slot" value="1"/>
-											<label>Clue 1 <input type="text" name="text"/></label>
-											<button type="submit">Submit</button>
-										</form>
-									}
-									if view.Round.ClueSlots >= 2 {
-										<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
-											<input type="hidden" name="slot" value="2"/>
-											<label>Clue 2 <input type="text" name="text"/></label>
-											<button type="submit">Submit</button>
-										</form>
-									}
-									if view.Round.ClueSlots >= 3 {
-										<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="inline-form">
-											<input type="hidden" name="slot" value="3"/>
-											<label>Clue 3 <input type="text" name="text"/></label>
-											<button type="submit">Submit</button>
-										</form>
-									}
-								</div>
+								<p class="lead">Enter all required clues, then submit them together. Matching clues are automatically invalidated in review.</p>
+								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="stacked">
+									<div class="stacked">
+										for _, entry := range view.Round.ClueEntries {
+											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required/></label>
+										}
+									</div>
+									<p class="muted">Your clues: { itoa(view.Round.YourClueCount) } / { itoa(view.Round.ClueSlots) } · Round progress: { itoa(view.Round.SubmittedPlayers) } / { itoa(view.Round.TotalCluegivers) } clue-givers finished</p>
+									<button type="submit">
+										if view.Round.YourClueCount == view.Round.ClueSlots {
+											Update clues
+										} else {
+											Submit clues
+										}
+									</button>
+								</form>
 							} else if view.Round.ActiveGuesser {
 								<p class="lead">Stay blind while the clue-givers enter their clues.</p>
 							} else {

@@ -180,8 +180,13 @@ func (a *App) handleRoomAction(w http.ResponseWriter, r *http.Request, room *Roo
 		idx := mustInt(r.FormValue("index"), -1)
 		actionError(room, room.chooseWord(token, idx))
 	case "clue":
-		slot := mustInt(r.FormValue("slot"), 1)
-		actionError(room, room.submitClue(token, slot, r.FormValue("text")))
+		round := room.round()
+		slotCount := room.effectiveClueSlots(round)
+		texts := make([]string, 0, slotCount)
+		for slot := 1; slot <= slotCount; slot++ {
+			texts = append(texts, r.FormValue(clueFieldName(slot)))
+		}
+		actionError(room, room.submitClues(token, texts))
 	case "review":
 		actionError(room, room.advanceToReview(token))
 	case "toggle-clue":

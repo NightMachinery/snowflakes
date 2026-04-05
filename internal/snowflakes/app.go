@@ -329,6 +329,10 @@ func clueKey(token string, slot int) string {
 	return fmt.Sprintf("%s:%d", token, slot)
 }
 
+func clueFieldName(slot int) string {
+	return fmt.Sprintf("clue_%d", slot)
+}
+
 func normalizeWordSelectionMode(mode WordSelectionMode) WordSelectionMode {
 	if mode == SelectionBlindSlot {
 		return SelectionAdminPick
@@ -714,7 +718,7 @@ func (r *Room) castVote(token string, idx int) error {
 	return nil
 }
 
-func (r *Room) submitClue(token string, slot int, text string) error {
+func (r *Room) submitClues(token string, texts []string) error {
 	round := r.round()
 	if round == nil || round.Phase != PhaseClueEntry {
 		return errors.New("not accepting clues")
@@ -723,30 +727,47 @@ func (r *Room) submitClue(token string, slot int, text string) error {
 		return errors.New("not eligible to submit clues")
 	}
 	maxSlots := r.effectiveClueSlots(round)
-	if slot < 1 || slot > maxSlots {
-		return errors.New("invalid clue slot")
+	if len(texts) != maxSlots {
+		return errors.New("all clue slots must be submitted together")
 	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return errors.New("clue cannot be empty")
+	normalized := make([]string, maxSlots)
+	for slot := 1; slot <= maxSlots; slot++ {
+		text := strings.TrimSpace(texts[slot-1])
+		if text == "" {
+			return fmt.Errorf("clue %d cannot be empty", slot)
+		}
+		normalized[slot-1] = text
 	}
-	round.Clues[clueKey(token, slot)] = ClueSubmission{PlayerToken: token, Slot: slot, Text: text}
+	for slot := 1; slot <= maxSlots; slot++ {
+		round.Clues[clueKey(token, slot)] = ClueSubmission{PlayerToken: token, Slot: slot, Text: normalized[slot-1]}
+	}
 	return nil
 }
 
-func (r *Room) allCluesSubmitted(round *Round) bool {
+func (r *Room) submittedCluegiverCount(round *Round) int {
 	if round == nil || round.Phase != PhaseClueEntry {
-		return false
+		return 0
 	}
 	slots := r.effectiveClueSlots(round)
+	completed := 0
 	for _, token := range r.eligibleCluegivers(round) {
+		complete := true
 		for slot := 1; slot <= slots; slot++ {
 			if _, ok := round.Clues[clueKey(token, slot)]; !ok {
-				return false
+				complete = false
+				break
 			}
 		}
+		if complete {
+			completed++
+		}
 	}
-	return len(r.eligibleCluegivers(round)) > 0
+	return completed
+}
+
+func (r *Room) allCluesSubmitted(round *Round) bool {
+	total := len(r.eligibleCluegivers(round))
+	return total > 0 && r.submittedCluegiverCount(round) == total
 }
 
 func (r *Room) advanceToReview(requester string) error {

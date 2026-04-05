@@ -182,3 +182,22 @@ func TestGuesserCardPoolOnlyVisibleDuringGuessPhaseWhenEnabled(t *testing.T) {
 		t.Fatal("expected guesser to see answer bank during guess phase")
 	}
 }
+
+func TestSubmitCluesRequiresCompleteSet(t *testing.T) {
+	room := newPermissionTestRoom()
+	room.Game.CurrentRound.Phase = PhaseClueEntry
+	room.Game.CurrentRound.TargetWord = "Pear"
+
+	if err := room.submitClues("b", []string{"single"}); err == nil {
+		t.Fatal("expected partial clue submission to fail")
+	}
+	if err := room.submitClues("b", []string{"orchard", "green"}); err != nil {
+		t.Fatalf("expected complete clue submission to succeed: %v", err)
+	}
+	if got := len(room.Game.CurrentRound.Clues); got != 2 {
+		t.Fatalf("expected 2 saved clues, got %d", got)
+	}
+	if !room.allCluesSubmitted(room.Game.CurrentRound) {
+		t.Fatal("expected all clues to be submitted")
+	}
+}

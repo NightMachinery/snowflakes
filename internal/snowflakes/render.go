@@ -75,6 +75,10 @@ type RoundView struct {
 	ActiveGuesser     bool
 	Spokesperson      bool
 	ClueSlots         int
+	ClueEntries       []ClueEntryFieldView
+	YourClueCount     int
+	TotalCluegivers   int
+	SubmittedPlayers  int
 	Clues             []ClueView
 	VisibleClues      []string
 	AllCluesSubmitted bool
@@ -92,6 +96,12 @@ type ChoiceView struct {
 	Votes         int
 	VotedByYou    bool
 	Selected      bool
+}
+
+type ClueEntryFieldView struct {
+	Slot      int
+	Text      string
+	Submitted bool
 }
 
 type ClueView struct {
@@ -223,6 +233,18 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 
 	clues := make([]ClueView, 0, len(round.Clues))
 	validClues := make([]string, 0, len(round.Clues))
+	clueEntries := make([]ClueEntryFieldView, 0, r.effectiveClueSlots(round))
+	yourClueCount := 0
+	for slot := 1; slot <= r.effectiveClueSlots(round); slot++ {
+		text := ""
+		submitted := false
+		if clue, ok := round.Clues[clueKey(viewerToken, slot)]; ok {
+			text = clue.Text
+			submitted = true
+			yourClueCount++
+		}
+		clueEntries = append(clueEntries, ClueEntryFieldView{Slot: slot, Text: text, Submitted: submitted})
+	}
 	for key, clue := range round.Clues {
 		name := clue.PlayerToken
 		if p := r.Participants[clue.PlayerToken]; p != nil {
@@ -264,6 +286,10 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 		ActiveGuesser:     isActiveGuesser,
 		Spokesperson:      r.spokesperson(round) == viewerToken,
 		ClueSlots:         r.effectiveClueSlots(round),
+		ClueEntries:       clueEntries,
+		YourClueCount:     yourClueCount,
+		TotalCluegivers:   len(cluegivers),
+		SubmittedPlayers:  r.submittedCluegiverCount(round),
 		Clues:             clues,
 		VisibleClues:      validClues,
 		AllCluesSubmitted: r.allCluesSubmitted(round),
