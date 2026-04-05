@@ -39,6 +39,9 @@ func TestIndexRendersLandingPage(t *testing.T) {
 			t.Fatalf("expected body to contain %q, got %q", want, body)
 		}
 	}
+	if strings.Contains(body, "A cleaner Just One-style room for quick self-hosted play.") {
+		t.Fatalf("did not expect removed header subtitle, got %q", body)
+	}
 	if cookie := rr.Result().Cookies(); len(cookie) == 0 {
 		t.Fatal("expected auth cookie to be set")
 	}
