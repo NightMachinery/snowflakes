@@ -109,6 +109,7 @@ const (
 	PhaseResolved      Phase = "round_resolved"
 
 	GameLobby    GameStatus = "lobby"
+	GamePaused   GameStatus = "paused"
 	GameRunning  GameStatus = "running"
 	GameFinished GameStatus = "finished"
 )
@@ -153,17 +154,19 @@ type ClueSubmission struct {
 }
 
 type Round struct {
-	Phase                         Phase
-	Card                          RoundCard
-	TargetIndex                   int
-	TargetWord                    string
-	TemporaryRoundControllerToken string
-	VotesByToken                  map[string]int
-	Clues                         map[string]ClueSubmission
-	ManualInvalid                 map[string]bool
-	Guesses                       map[string]string
-	PassByToken                   map[string]bool
-	Result                        string
+	Phase                 Phase
+	Card                  RoundCard
+	TargetIndex           int
+	TargetWord            string
+	ActiveGuesserTokens   []string
+	CluegiverTokens       []string
+	RoundControllerTokens []string
+	VotesByToken          map[string]int
+	Clues                 map[string]ClueSubmission
+	ManualInvalid         map[string]bool
+	Guesses               map[string]string
+	PassByToken           map[string]bool
+	Result                string
 }
 
 type Game struct {
@@ -325,6 +328,81 @@ func normalizeText(s string) string {
 	}, s)
 }
 
+func normalizeParticipantName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func splitParticipantNameFamily(name string) string {
+	name = normalizeParticipantName(name)
+	if name == "" {
+		return ""
+	}
+	lastSpace := strings.LastIndex(name, " ")
+	if lastSpace <= 0 {
+		return name
+	}
+	suffix, err := strconv.Atoi(name[lastSpace+1:])
+	if err != nil || suffix < 2 {
+		return name
+	}
+	base := strings.TrimSpace(name[:lastSpace])
+	if base == "" {
+		return name
+	}
+	return base
+}
+
+func parseParticipantNameFamilyIndex(name, family string) (int, bool) {
+	name = normalizeParticipantName(name)
+	family = normalizeParticipantName(family)
+	switch {
+	case name == family:
+		return 1, true
+	case !strings.HasPrefix(name, family+" "):
+		return 0, false
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(name, family+" "))
+	if err != nil || index < 2 {
+		return 0, false
+	}
+	return index, true
+}
+
+func (r *Room) uniqueParticipantName(token, requested string) string {
+	name := normalizeParticipantName(requested)
+	if name == "" {
+		return ""
+	}
+	usedExact := false
+	for otherToken, participant := range r.Participants {
+		if otherToken == token || participant == nil {
+			continue
+		}
+		if normalizeParticipantName(participant.Name) == name {
+			usedExact = true
+			break
+		}
+	}
+	if !usedExact {
+		return name
+	}
+	family := splitParticipantNameFamily(name)
+	used := map[int]bool{}
+	for otherToken, participant := range r.Participants {
+		if otherToken == token || participant == nil {
+			continue
+		}
+		if index, ok := parseParticipantNameFamilyIndex(participant.Name, family); ok {
+			used[index] = true
+		}
+	}
+	for index := 2; ; index++ {
+		if !used[index] {
+			return fmt.Sprintf("%s %d", family, index)
+		}
+	}
+}
+
 func clueKey(token string, slot int) string {
 	return fmt.Sprintf("%s:%d", token, slot)
 }
@@ -385,17 +463,18 @@ func (a *App) createRoom(token, name string) *Room {
 		if _, exists := a.rooms[code]; exists {
 			continue
 		}
-		p := &Participant{Token: token, Name: name, Role: RolePlayer, Admin: true, Creator: true}
 		room := &Room{
 			Code:         code,
 			CreatorToken: token,
-			Participants: map[string]*Participant{token: p},
+			Participants: map[string]*Participant{},
 			Order:        []string{token},
 			Settings:     defaultRoomSettings(),
 			Game:         &Game{Status: GameLobby},
 			CustomPacks:  map[string]WordPack{},
 			subscribers:  map[chan struct{}]struct{}{},
 		}
+		p := &Participant{Token: token, Name: room.uniqueParticipantName(token, name), Role: RolePlayer, Admin: true, Creator: true}
+		room.Participants[token] = p
 		a.rooms[code] = room
 		return room
 	}
@@ -476,7 +555,7 @@ func (r *Room) effectiveClueSlots(round *Round) int {
 	return 1
 }
 
-func (r *Room) activeGuessers(round *Round) []string {
+func (r *Room) dynamicActiveGuessers() []string {
 	players := r.playerOrder()
 	if len(players) == 0 {
 		return nil
@@ -502,15 +581,15 @@ func (r *Room) activeGuessers(round *Round) []string {
 	return out
 }
 
-func (r *Room) eligibleCluegivers(round *Round) []string {
-	guessers := map[string]struct{}{}
-	for _, token := range r.activeGuessers(round) {
-		guessers[token] = struct{}{}
+func (r *Room) dynamicEligibleCluegivers(guessers []string) []string {
+	guesserSet := map[string]struct{}{}
+	for _, token := range guessers {
+		guesserSet[token] = struct{}{}
 	}
 	players := r.playerOrder()
 	out := make([]string, 0, len(players))
 	for _, token := range players {
-		if _, ok := guessers[token]; ok {
+		if _, ok := guesserSet[token]; ok {
 			continue
 		}
 		out = append(out, token)
@@ -518,24 +597,49 @@ func (r *Room) eligibleCluegivers(round *Round) []string {
 	return out
 }
 
-func (r *Room) isActiveGuesser(round *Round, token string) bool {
-	if token == "" {
-		return false
+func (r *Room) activeGuessers(round *Round) []string {
+	if round == nil {
+		return nil
 	}
-	return slices.Contains(r.activeGuessers(round), token)
+	if round.ActiveGuesserTokens == nil {
+		return r.dynamicActiveGuessers()
+	}
+	out := make([]string, 0, len(round.ActiveGuesserTokens))
+	for _, token := range round.ActiveGuesserTokens {
+		if participant := r.Participants[token]; participant != nil && participant.Role == RolePlayer {
+			out = append(out, token)
+		}
+	}
+	return out
 }
 
-func (r *Room) nonGuessingAdmins(round *Round) []string {
-	guessers := map[string]struct{}{}
-	for _, token := range r.activeGuessers(round) {
-		guessers[token] = struct{}{}
+func (r *Room) eligibleCluegivers(round *Round) []string {
+	if round == nil {
+		return nil
+	}
+	if round.CluegiverTokens == nil {
+		return r.dynamicEligibleCluegivers(r.activeGuessers(round))
+	}
+	out := make([]string, 0, len(round.CluegiverTokens))
+	for _, token := range round.CluegiverTokens {
+		if participant := r.Participants[token]; participant != nil && participant.Role == RolePlayer {
+			out = append(out, token)
+		}
+	}
+	return out
+}
+
+func (r *Room) initialRoundControllers(guessers, cluegivers []string) []string {
+	guesserSet := map[string]struct{}{}
+	for _, token := range guessers {
+		guesserSet[token] = struct{}{}
 	}
 	out := make([]string, 0)
 	for token, participant := range r.Participants {
 		if participant == nil || !participant.Admin {
 			continue
 		}
-		if _, ok := guessers[token]; ok {
+		if _, ok := guesserSet[token]; ok {
 			continue
 		}
 		out = append(out, token)
@@ -548,47 +652,69 @@ func (r *Room) nonGuessingAdmins(round *Round) []string {
 		}
 		return left < right
 	})
-	return out
+	if len(out) > 0 {
+		return out
+	}
+	if len(cluegivers) > 0 {
+		return []string{cluegivers[0]}
+	}
+	return nil
 }
 
 func (r *Room) assignTemporaryRoundController(round *Round) {
 	if round == nil {
 		return
 	}
-	round.TemporaryRoundControllerToken = ""
-	if len(r.nonGuessingAdmins(round)) > 0 {
-		return
-	}
-	cluegivers := r.eligibleCluegivers(round)
-	if len(cluegivers) > 0 {
-		round.TemporaryRoundControllerToken = cluegivers[0]
-	}
+	round.ActiveGuesserTokens = append([]string{}, r.dynamicActiveGuessers()...)
+	round.CluegiverTokens = append([]string{}, r.dynamicEligibleCluegivers(round.ActiveGuesserTokens)...)
+	round.RoundControllerTokens = append([]string{}, r.initialRoundControllers(round.ActiveGuesserTokens, round.CluegiverTokens)...)
 }
 
 func (r *Room) roundControllers(round *Round) []string {
 	if round == nil {
 		return nil
 	}
-	if admins := r.nonGuessingAdmins(round); len(admins) > 0 {
-		return admins
+	if round.RoundControllerTokens == nil {
+		return r.initialRoundControllers(r.activeGuessers(round), r.eligibleCluegivers(round))
 	}
-	if round.TemporaryRoundControllerToken != "" {
-		return []string{round.TemporaryRoundControllerToken}
+	out := make([]string, 0, len(round.RoundControllerTokens))
+	for _, token := range round.RoundControllerTokens {
+		if r.Participants[token] != nil {
+			out = append(out, token)
+		}
 	}
-	return nil
+	return out
 }
 
 func (r *Room) canManageRound(round *Round, token string) bool {
 	if round == nil || token == "" {
 		return false
 	}
-	if r.isActiveGuesser(round, token) {
+	return slices.Contains(r.roundControllers(round), token)
+}
+
+func (r *Room) isActiveGuesser(round *Round, token string) bool {
+	if token == "" {
 		return false
 	}
-	if participant := r.Participants[token]; participant != nil && participant.Admin {
-		return true
+	return slices.Contains(r.activeGuessers(round), token)
+}
+
+func (r *Room) buildRound(card RoundCard) *Round {
+	guessers := r.dynamicActiveGuessers()
+	cluegivers := r.dynamicEligibleCluegivers(guessers)
+	return &Round{
+		Phase:                 PhaseWordSelection,
+		Card:                  card,
+		ActiveGuesserTokens:   append([]string{}, guessers...),
+		CluegiverTokens:       append([]string{}, cluegivers...),
+		RoundControllerTokens: append([]string{}, r.initialRoundControllers(guessers, cluegivers)...),
+		VotesByToken:          map[string]int{},
+		Clues:                 map[string]ClueSubmission{},
+		ManualInvalid:         map[string]bool{},
+		Guesses:               map[string]string{},
+		PassByToken:           map[string]bool{},
 	}
-	return round.TemporaryRoundControllerToken == token
 }
 
 func (r *Room) applyPendingRoles() {
@@ -601,6 +727,98 @@ func (r *Room) applyPendingRoles() {
 			}
 		}
 	}
+}
+
+func removeToken(values []string, target string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	out := values[:0]
+	for _, value := range values {
+		if value != target {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func (r *Room) resetCurrentRound(applyPending bool) error {
+	if applyPending {
+		r.applyPendingRoles()
+	}
+	if r.Game == nil || r.Game.CurrentIndex >= len(r.Game.Deck) {
+		return errors.New("no remaining round")
+	}
+	r.Game.CurrentRound = r.buildRound(r.Game.Deck[r.Game.CurrentIndex])
+	r.Game.Status = GameRunning
+	return nil
+}
+
+func (r *Room) pauseGame() {
+	if r.Game == nil {
+		return
+	}
+	r.Game.Status = GamePaused
+	r.Game.CurrentRound = nil
+}
+
+func (r *Room) tryResumePausedGame() error {
+	if r.Game == nil || r.Game.Status != GamePaused {
+		return nil
+	}
+	if len(r.playerOrder()) < 2 {
+		return nil
+	}
+	return r.resetCurrentRound(false)
+}
+
+func (r *Room) pruneParticipantFromRound(round *Round, token string) {
+	if round == nil || token == "" {
+		return
+	}
+	round.ActiveGuesserTokens = removeToken(round.ActiveGuesserTokens, token)
+	round.CluegiverTokens = removeToken(round.CluegiverTokens, token)
+	round.RoundControllerTokens = removeToken(round.RoundControllerTokens, token)
+	delete(round.VotesByToken, token)
+	delete(round.Guesses, token)
+	delete(round.PassByToken, token)
+	for key, clue := range round.Clues {
+		if clue.PlayerToken != token {
+			continue
+		}
+		delete(round.Clues, key)
+		delete(round.ManualInvalid, key)
+	}
+}
+
+func (r *Room) ensureRoundController(round *Round) {
+	if round == nil || len(round.RoundControllerTokens) > 0 {
+		return
+	}
+	cluegivers := r.eligibleCluegivers(round)
+	if len(cluegivers) > 0 {
+		round.RoundControllerTokens = []string{cluegivers[0]}
+	}
+}
+
+func (r *Room) roundStillValid(round *Round) bool {
+	return round != nil && len(r.activeGuessers(round)) > 0 && len(r.eligibleCluegivers(round)) > 0 && len(r.roundControllers(round)) > 0
+}
+
+func (r *Room) handleImmediateObserverChange(round *Round, token string) error {
+	if round == nil {
+		return nil
+	}
+	r.pruneParticipantFromRound(round, token)
+	r.ensureRoundController(round)
+	if r.roundStillValid(round) {
+		return nil
+	}
+	if len(r.playerOrder()) < 2 {
+		r.pauseGame()
+		return nil
+	}
+	return r.resetCurrentRound(false)
 }
 
 func buildDeck(rng *mrand.Rand, pack WordPack, settings RoomSettings) ([]RoundCard, error) {
@@ -649,27 +867,11 @@ func (r *Room) startGame(rng *mrand.Rand, pack WordPack) error {
 	}
 	r.Game = &Game{Status: GameRunning, Deck: deck, CurrentIndex: 0}
 	r.clearFlash()
-	return r.setupRound()
+	return r.resetCurrentRound(false)
 }
 
 func (r *Room) setupRound() error {
-	r.applyPendingRoles()
-	if r.Game == nil || r.Game.CurrentIndex >= len(r.Game.Deck) {
-		return errors.New("no remaining round")
-	}
-	card := r.Game.Deck[r.Game.CurrentIndex]
-	r.Game.CurrentRound = &Round{
-		Phase:         PhaseWordSelection,
-		Card:          card,
-		VotesByToken:  map[string]int{},
-		Clues:         map[string]ClueSubmission{},
-		ManualInvalid: map[string]bool{},
-		Guesses:       map[string]string{},
-		PassByToken:   map[string]bool{},
-	}
-	r.assignTemporaryRoundController(r.Game.CurrentRound)
-	r.Game.Status = GameRunning
-	return nil
+	return r.resetCurrentRound(true)
 }
 
 func (r *Room) round() *Round {
@@ -928,11 +1130,16 @@ func (r *Room) setParticipantRole(requester, target string, role ParticipantRole
 	if participant == nil {
 		return errors.New("participant not found")
 	}
-	if participant.Role == role {
+	if participant.Role == role && participant.PendingRole == nil {
 		return nil
 	}
 	round := r.round()
-	if round != nil && round.Phase != PhaseResolved {
+	if r.Game != nil && r.Game.Status == GameRunning && round != nil && round.Phase != PhaseResolved {
+		if role == RoleObserver {
+			participant.Role = role
+			participant.PendingRole = nil
+			return r.handleImmediateObserverChange(round, participant.Token)
+		}
 		participant.PendingRole = &role
 		return nil
 	}
@@ -940,6 +1147,9 @@ func (r *Room) setParticipantRole(requester, target string, role ParticipantRole
 	participant.PendingRole = nil
 	if role == RolePlayer && !slices.Contains(r.Order, participant.Token) {
 		r.Order = append(r.Order, participant.Token)
+	}
+	if r.Game != nil && r.Game.Status == GamePaused {
+		return r.tryResumePausedGame()
 	}
 	return nil
 }
@@ -962,21 +1172,30 @@ func (r *Room) setAdmin(requester, target string, adminValue bool) error {
 
 func (r *Room) join(token, name string) {
 	if existing := r.Participants[token]; existing != nil {
-		if strings.TrimSpace(name) != "" {
-			existing.Name = strings.TrimSpace(name)
+		if normalizeParticipantName(name) != "" {
+			existing.Name = r.uniqueParticipantName(token, name)
 		}
 		return
 	}
 	role := RolePlayer
-	if round := r.round(); round != nil && round.Phase != PhaseResolved {
-		if round.Phase != PhaseWordSelection && round.Phase != PhaseClueEntry {
+	var pendingRole *ParticipantRole
+	if r.Game != nil && r.Game.Status == GameRunning {
+		if round := r.round(); round != nil && round.Phase != PhaseResolved {
 			role = RoleObserver
+			playerRole := RolePlayer
+			pendingRole = &playerRole
 		}
 	}
-	p := &Participant{Token: token, Name: name, Role: role}
+	if r.Game != nil && r.Game.Status == GamePaused {
+		role = RolePlayer
+	}
+	p := &Participant{Token: token, Name: r.uniqueParticipantName(token, name), Role: role, PendingRole: pendingRole}
 	r.Participants[token] = p
 	if role == RolePlayer {
 		r.Order = append(r.Order, token)
+	}
+	if r.Game != nil && r.Game.Status == GamePaused {
+		_ = r.tryResumePausedGame()
 	}
 }
 

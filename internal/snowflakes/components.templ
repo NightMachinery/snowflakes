@@ -106,7 +106,11 @@ templ roomInner(view RoomView) {
 						<div>
 							<p class="eyebrow">Current step</p>
 							if view.Round == nil {
-								<h3>Ready to start</h3>
+								if view.GamePaused {
+									<h3>Game paused</h3>
+								} else {
+									<h3>Ready to start</h3>
+								}
 							} else if view.Round.Phase == "word_selection" {
 								<h3>Choose the target word</h3>
 							} else if view.Round.Phase == "clue_entry" {
@@ -125,7 +129,11 @@ templ roomInner(view RoomView) {
 					</div>
 
 					if view.Round == nil {
-						<p class="lead">No round is active yet. Confirm your players and settings, then kick off a new 13-card game.</p>
+						if view.GamePaused {
+							<p class="lead">The game is paused because fewer than 2 players are available. Add players to auto-restart the current round.</p>
+						} else {
+							<p class="lead">No round is active yet. Confirm your players and settings, then kick off a new 13-card game.</p>
+						}
 						if view.IsAdmin && view.CanStartGame {
 							<form method="post" action={ roomActionPath(view.Code, "start") } data-ajax="true">
 								<button type="submit">Start new 13-card game</button>
@@ -243,7 +251,7 @@ templ roomInner(view RoomView) {
 								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="stacked">
 									<div class="stacked">
 										for _, entry := range view.Round.ClueEntries {
-											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required pattern=".*\\S.*" title="Clue cannot be blank or whitespace only."/></label>
+											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required pattern=".*\S.*" title="Clue cannot be blank or whitespace only."/></label>
 										}
 									</div>
 									<p class="muted">Your clues: { itoa(view.Round.YourClueCount) } / { itoa(view.Round.ClueSlots) } · Round progress: { itoa(view.Round.SubmittedPlayers) } / { itoa(view.Round.TotalCluegivers) } clue-givers finished</p>

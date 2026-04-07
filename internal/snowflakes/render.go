@@ -33,6 +33,7 @@ type RoomView struct {
 	CurrentCardNumber int
 	RemainingCards    int
 	Status            string
+	GamePaused        bool
 	GameFinished      bool
 	CanStartGame      bool
 	CanShowNextRound  bool
@@ -201,6 +202,7 @@ func (a *App) buildRoomView(room *Room, viewerToken string) RoomView {
 		view.Won = room.Game.Won
 		view.CurrentCardNumber = min(room.Game.CurrentIndex+1, len(room.Game.Deck))
 		view.RemainingCards = max(0, len(room.Game.Deck)-room.Game.CurrentIndex)
+		view.GamePaused = room.Game.Status == GamePaused
 		view.GameFinished = room.Game.Status == GameFinished
 		view.CanStartGame = room.Game.Status == GameLobby || room.Game.Status == GameFinished
 		if room.Game.CurrentRound != nil {

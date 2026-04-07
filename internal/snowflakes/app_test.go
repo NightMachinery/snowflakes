@@ -83,6 +83,7 @@ func newPermissionTestRoom() *Room {
 		Game: &Game{
 			Status:       GameRunning,
 			CurrentIndex: 0,
+			Deck:         []RoundCard{testRoundCard(), testRoundCard()},
 			CurrentRound: &Round{
 				Phase:         PhaseWordSelection,
 				Card:          RoundCard{Pool: []string{"Apple", "Pear", "Peach"}, Slate: []string{"Apple", "Pear", "Peach"}},
@@ -291,8 +292,11 @@ func TestAdminGuesserKeepsSafeAdminControls(t *testing.T) {
 	if err := room.setParticipantRole("a", "b", RoleObserver); err != nil {
 		t.Fatalf("expected active admin guesser to retain safe admin controls: %v", err)
 	}
-	if room.Participants["b"].PendingRole == nil || *room.Participants["b"].PendingRole != RoleObserver {
-		t.Fatalf("expected pending observer role for Bob, got %#v", room.Participants["b"].PendingRole)
+	if room.Participants["b"].Role != RoleObserver || room.Participants["b"].PendingRole != nil {
+		t.Fatalf("expected Bob to become an observer immediately, got %#v", room.Participants["b"])
+	}
+	if room.Game.Status != GamePaused || room.Game.CurrentRound != nil {
+		t.Fatalf("expected room to pause after losing a required player, got %#v", room.Game)
 	}
 }
 
@@ -301,12 +305,128 @@ func TestNonGuessingAdminKeepsRoundControlsWithoutTemporaryAssignment(t *testing
 	room.Participants["b"].Admin = true
 	room.assignTemporaryRoundController(room.Game.CurrentRound)
 
-	if room.Game.CurrentRound.TemporaryRoundControllerToken != "" {
-		t.Fatalf("did not expect temporary round controller when a non-guessing admin exists, got %q", room.Game.CurrentRound.TemporaryRoundControllerToken)
+	if got := room.roundControllers(room.Game.CurrentRound); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("expected Bob to remain the round controller, got %#v", got)
 	}
 	view := newPermissionTestApp().buildRoomView(room, "b")
 	if view.Round == nil || !view.Round.CanManageRound {
 		t.Fatalf("expected non-guessing admin to manage the round, got %#v", view.Round)
+	}
+}
+
+func TestDuplicateNamesAutoIncrementWithinRoom(t *testing.T) {
+	room := &Room{
+		Participants: map[string]*Participant{
+			"a": {Token: "a", Name: "Bob", Role: RolePlayer},
+		},
+	}
+
+	if got := room.uniqueParticipantName("b", " Bob "); got != "Bob 2" {
+		t.Fatalf("expected duplicate name to auto-increment, got %q", got)
+	}
+	if got := room.uniqueParticipantName("b", "bob"); got != "bob" {
+		t.Fatalf("expected case-sensitive distinct name to remain unchanged, got %q", got)
+	}
+	room.Participants["b"] = &Participant{Token: "b", Name: "Bob 2", Role: RolePlayer}
+	if got := room.uniqueParticipantName("c", "Bob 2"); got != "Bob 3" {
+		t.Fatalf("expected suffixed duplicate to advance to next available slot, got %q", got)
+	}
+}
+
+func TestJoinRenamesDuplicatesAutomatically(t *testing.T) {
+	room := &Room{
+		Participants: map[string]*Participant{
+			"a": {Token: "a", Name: "Bob", Role: RolePlayer},
+		},
+		Game: &Game{Status: GameLobby},
+	}
+
+	room.join("b", " Bob ")
+	if got := room.Participants["b"].Name; got != "Bob 2" {
+		t.Fatalf("expected joined duplicate to become Bob 2, got %q", got)
+	}
+
+	room.join("b", "Bob")
+	if got := room.Participants["b"].Name; got != "Bob 2" {
+		t.Fatalf("expected same-token rename to keep its own assigned name, got %q", got)
+	}
+
+	room.join("b", "Alice")
+	if got := room.Participants["b"].Name; got != "Alice" {
+		t.Fatalf("expected same-token rename to unique name to succeed, got %q", got)
+	}
+}
+
+func TestMakingRoundControllerObserverHandsOffToNextCluegiver(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		if err := room.setParticipantRole(aliceToken, bobToken, RoleObserver); err != nil {
+			t.Fatalf("expected observer change to succeed: %v", err)
+		}
+		if room.Game.Status != GameRunning {
+			t.Fatalf("expected game to keep running, got %s", room.Game.Status)
+		}
+		if got := room.roundControllers(room.Game.CurrentRound); len(got) != 1 || got[0] != caraToken {
+			t.Fatalf("expected control to hand off to Cara, got %#v", got)
+		}
+		if room.canManageRound(room.Game.CurrentRound, bobToken) {
+			t.Fatal("did not expect removed controller to keep round controls")
+		}
+	})
+}
+
+func TestMakingOnlyGuesserObserverRestartsCurrentRound(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueEntry
+		round.TargetWord = "Pear"
+		round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "orchard"}
+
+		if err := room.setParticipantRole(aliceToken, aliceToken, RoleObserver); err != nil {
+			t.Fatalf("expected observer change to succeed: %v", err)
+		}
+		if room.Game.Status != GameRunning {
+			t.Fatalf("expected restarted game to stay running, got %s", room.Game.Status)
+		}
+		restarted := room.Game.CurrentRound
+		if restarted == nil || restarted.Phase != PhaseWordSelection {
+			t.Fatalf("expected round to restart from word selection, got %#v", restarted)
+		}
+		if room.Game.CurrentIndex != 0 {
+			t.Fatalf("expected restart on the same card index, got %d", room.Game.CurrentIndex)
+		}
+		if restarted.TargetWord != "" || len(restarted.Clues) != 0 {
+			t.Fatalf("expected restarted round to clear prior progress, got %#v", restarted)
+		}
+		if got := room.activeGuessers(restarted); len(got) != 1 || got[0] != bobToken {
+			t.Fatalf("expected Bob to become the restarted guesser, got %#v", got)
+		}
+	})
+}
+
+func TestMakingPlayerObserverPausesAndJoinResumesGame(t *testing.T) {
+	room := newPermissionTestRoom()
+
+	if err := room.setParticipantRole("a", "b", RoleObserver); err != nil {
+		t.Fatalf("expected observer change to succeed: %v", err)
+	}
+	if room.Game.Status != GamePaused || room.Game.CurrentRound != nil {
+		t.Fatalf("expected paused game after losing down to one player, got %#v", room.Game)
+	}
+
+	room.join("c", "Cara")
+	if room.Participants["c"].Role != RolePlayer {
+		t.Fatalf("expected paused-game joiner to become a player, got %#v", room.Participants["c"])
+	}
+	if room.Game.Status != GameRunning || room.Game.CurrentRound == nil {
+		t.Fatalf("expected paused game to auto-resume, got %#v", room.Game)
+	}
+	if room.Game.CurrentIndex != 0 {
+		t.Fatalf("expected resumed round to stay on the same card, got %d", room.Game.CurrentIndex)
 	}
 }
 

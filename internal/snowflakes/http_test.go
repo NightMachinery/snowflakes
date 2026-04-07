@@ -224,7 +224,7 @@ func TestClueEntryFragmentContractsByRole(t *testing.T) {
 
 	cluegiverRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
 	cluegiverBody := cluegiverRR.Body.String()
-	assertContainsAll(t, cluegiverBody, "name=\"clue_1\"", "name=\"clue_2\"", "pattern=\".*\\\\S.*\"", ">Submit clues</button>", "Your clues: 0 / 2")
+	assertContainsAll(t, cluegiverBody, "name=\"clue_1\"", "name=\"clue_2\"", "pattern=\".*\\S.*\"", ">Submit clues</button>", "Your clues: 0 / 2")
 	assertContainsCount(t, cluegiverBody, ">Submit clues</button>", 1)
 
 	guesserRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
@@ -420,6 +420,64 @@ func TestJoinMidRoundRedirectsAndAddsObserver(t *testing.T) {
 	room.mu.RUnlock()
 	if participant == nil || participant.Role != RoleObserver {
 		t.Fatalf("expected mid-round joiner to be an observer, got %#v", participant)
+	}
+}
+
+func TestJoinDuringWordSelectionAlsoStartsAsObserver(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+
+	rr := performFormRequest(t, app.Handler(), "/rooms/join", "erin-token", "code="+room.Code+"&name=Erin", false)
+	assertStatus(t, rr.Code, http.StatusSeeOther)
+
+	room.mu.RLock()
+	participant := room.Participants["erin-token"]
+	room.mu.RUnlock()
+	if participant == nil || participant.Role != RoleObserver {
+		t.Fatalf("expected running-game joiner to start as observer, got %#v", participant)
+	}
+	if participant.PendingRole == nil || *participant.PendingRole != RolePlayer {
+		t.Fatalf("expected running-game joiner to be promoted next round, got %#v", participant)
+	}
+}
+
+func TestJoinAutoSuffixesDuplicateNames(t *testing.T) {
+	app := newTestApp(t)
+	room := app.createRoom(aliceToken, "Bob")
+
+	rr := performFormRequest(t, app.Handler(), "/rooms/join", bobToken, "code="+room.Code+"&name= Bob ", false)
+	assertStatus(t, rr.Code, http.StatusSeeOther)
+
+	room.mu.RLock()
+	participant := room.Participants[bobToken]
+	room.mu.RUnlock()
+	if participant == nil || participant.Name != "Bob 2" {
+		t.Fatalf("expected duplicate join name to auto-increment, got %#v", participant)
+	}
+}
+
+func TestPausedGameJoinResumesCurrentRound(t *testing.T) {
+	app := newTestApp(t)
+	room := newPermissionTestRoom()
+	app.rooms[room.Code] = room
+
+	if err := room.setParticipantRole("a", "b", RoleObserver); err != nil {
+		t.Fatalf("expected observer change to succeed: %v", err)
+	}
+	if room.Game.Status != GamePaused {
+		t.Fatalf("expected game to pause first, got %s", room.Game.Status)
+	}
+
+	rr := performFormRequest(t, app.Handler(), "/rooms/join", caraToken, "code="+room.Code+"&name=Cara", false)
+	assertStatus(t, rr.Code, http.StatusSeeOther)
+
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	if room.Game.Status != GameRunning || room.Game.CurrentRound == nil {
+		t.Fatalf("expected paused game to resume after join, got %#v", room.Game)
+	}
+	if participant := room.Participants[caraToken]; participant == nil || participant.Role != RolePlayer {
+		t.Fatalf("expected paused-game joiner to be a player, got %#v", participant)
 	}
 }
 
