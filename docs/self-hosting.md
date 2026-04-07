@@ -16,11 +16,9 @@
 - Extra word packs: `~/.snowflakes/wordpacks/` or `SNOWFLAKES_WORDPACK_DIR`
 
 ## Proxy
-The self-host script exports:
+The self-host script does **not** define a proxy for you.
 
-```zsh
-export ALL_PROXY=http://127.0.0.1:20808 all_proxy=http://127.0.0.1:20808 http_proxy=http://127.0.0.1:20808 https_proxy=http://127.0.0.1:20808 HTTP_PROXY=http://127.0.0.1:20808 HTTPS_PROXY=http://127.0.0.1:20808 npm_config_proxy=http://127.0.0.1:20808 npm_config_https_proxy=http://127.0.0.1:20808
-```
+If your shell already has proxy variables set (for example `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, or `npm_config_*_proxy`), the script passes them through to the build and to the tmux-managed app process.
 
 ## Commands
 ```zsh

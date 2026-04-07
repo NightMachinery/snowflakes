@@ -16,7 +16,6 @@ APP_HOST="127.0.0.1"
 APP_PORT="3400"
 CADDY_BEGIN="# BEGIN snowflakes self-host"
 CADDY_END="# END snowflakes self-host"
-PROXY_EXPORTS='export ALL_PROXY=http://127.0.0.1:20808 all_proxy=http://127.0.0.1:20808 http_proxy=http://127.0.0.1:20808 https_proxy=http://127.0.0.1:20808 HTTP_PROXY=http://127.0.0.1:20808 HTTPS_PROXY=http://127.0.0.1:20808 npm_config_proxy=http://127.0.0.1:20808 npm_config_https_proxy=http://127.0.0.1:20808'
 
 PUBLIC_URL=""
 SITE_ADDRESS=""
@@ -88,18 +87,41 @@ ensure_dirs() {
 	mkdir -p "$BIN_DIR" "$LOG_DIR" "$WORDPACK_DIR"
 }
 
-load_proxy_env() {
-	eval "$PROXY_EXPORTS"
-}
-
 write_env() {
-	cat > "$ENV_PATH" <<EOF_ENV
-PORT=$APP_PORT
-NETWORK_ADDRESS=$APP_HOST
-ROOT_URL=$PUBLIC_URL
-SNOWFLAKES_PUBLIC_URL=$PUBLIC_URL
-SNOWFLAKES_WORDPACK_DIR=$WORDPACK_DIR
-EOF_ENV
+	PORT="$APP_PORT" \
+	NETWORK_ADDRESS="$APP_HOST" \
+	ROOT_URL="$PUBLIC_URL" \
+	SNOWFLAKES_PUBLIC_URL="$PUBLIC_URL" \
+	SNOWFLAKES_WORDPACK_DIR="$WORDPACK_DIR" \
+	python3 - "$ENV_PATH" <<'PY'
+from pathlib import Path
+import os
+import shlex
+import sys
+
+env_path = Path(sys.argv[1])
+base_names = [
+    "PORT",
+    "NETWORK_ADDRESS",
+    "ROOT_URL",
+    "SNOWFLAKES_PUBLIC_URL",
+    "SNOWFLAKES_WORDPACK_DIR",
+]
+proxy_names = sorted(name for name in os.environ if name.lower().endswith("_proxy"))
+lines = []
+written = set()
+
+for name in [*base_names, *proxy_names]:
+    if name in written:
+        continue
+    value = os.environ.get(name)
+    if value is None:
+        continue
+    lines.append(f"{name}={shlex.quote(value)}")
+    written.add(name)
+
+env_path.write_text("\n".join(lines) + "\n")
+PY
 }
 
 write_state() {
@@ -117,7 +139,6 @@ load_state() {
 
 build_binary() {
 	ensure_dirs
-	load_proxy_env
 
 	local local_go_version
 	local_go_version="$(GOWORK=off go env GOVERSION 2>/dev/null || true)"
