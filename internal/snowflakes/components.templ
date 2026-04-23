@@ -23,7 +23,7 @@ templ page(data PageData) {
 			<header class="site-header">
 				<div class="site-header__inner">
 					<a class="brand-mark" href="/">
-						<span class="brand-mark__icon">❄️</span>
+						<span class="brand-mark__icon" aria-hidden="true">❄</span>
 						<span class="brand-mark__copy">
 							<strong>Snowflakes</strong>
 							<small>Self-hosted hidden-info party room</small>
@@ -61,38 +61,59 @@ templ page(data PageData) {
 templ landingInner() {
 	<section class="landing-shell landing-shell--minimal">
 		<div class="landing-shell__atmosphere" aria-hidden="true">
-			<span class="landing-shell__stars"></span>
+			<span class="landing-shell__stars landing-shell__stars--far"></span>
+			<span class="landing-shell__stars landing-shell__stars--near"></span>
 			<span class="landing-shell__band landing-shell__band--one"></span>
 			<span class="landing-shell__band landing-shell__band--two"></span>
 			<span class="landing-shell__band landing-shell__band--three"></span>
+			<span class="landing-shell__band landing-shell__band--four"></span>
 			<span class="landing-shell__haze"></span>
+			<span class="landing-shell__reflection"></span>
+			<span class="landing-shell__ridge landing-shell__ridge--left"></span>
+			<span class="landing-shell__ridge landing-shell__ridge--center"></span>
+			<span class="landing-shell__ridge landing-shell__ridge--right"></span>
+			<span class="landing-shell__waterline"></span>
 		</div>
 
 		<div class="landing-copy">
-			<p class="kicker">Self-hosted party game</p>
+			<p class="kicker landing-kicker">A quiet social word game</p>
 			<h1 class="display-title landing-display">Keep the secret word hidden.</h1>
-			<p class="body-copy body-copy--wide landing-summary">Minimal room control for clue-givers, guessers, and quiet reveals—wrapped in a calmer Snowflakes landing.</p>
-			<p class="landing-meta">Self-hosted · fast room links · hidden info stays scoped</p>
+			<p class="body-copy body-copy--wide landing-summary">Give clues. Make guesses. Reveal together.</p>
+			<p class="body-copy body-copy--wide landing-summary landing-summary--secondary">Fast private rooms, hidden-info roles, and calm self-hosted play.</p>
 		</div>
 
 		<div class="landing-dock landing-dock--minimal surface surface--soft">
 			<div class="landing-dock__column landing-dock__column--create">
-				<p class="landing-dock__eyebrow">Create room</p>
+				<div class="landing-dock__heading">
+					<span class="landing-dock__icon" aria-hidden="true">✦</span>
+					<div>
+						<p class="landing-dock__eyebrow">Create room</p>
+						<p class="landing-dock__caption">Start a new game</p>
+					</div>
+				</div>
 				<form method="post" action="/rooms" class="landing-form landing-form--create">
-					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
-					<button type="submit">Create room</button>
+					<label class="landing-field"><span class="sr-only">Name</span><input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
+					<button type="submit">Create</button>
 				</form>
 			</div>
 			<div class="landing-dock__divider" aria-hidden="true"></div>
 			<div class="landing-dock__column landing-dock__column--join" id="join-room">
-				<p class="landing-dock__eyebrow">Join room</p>
+				<div class="landing-dock__heading">
+					<span class="landing-dock__icon" aria-hidden="true">↗</span>
+					<div>
+						<p class="landing-dock__eyebrow">Join room</p>
+						<p class="landing-dock__caption">Enter a room code</p>
+					</div>
+				</div>
 				<form method="post" action="/rooms/join" class="landing-form landing-form--join">
-					<label>Room code <input type="text" name="code" required placeholder="ABCDE" inputmode="text" autocapitalize="characters" autocomplete="one-time-code"/></label>
-					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
-					<button type="submit" class="button-secondary">Join room</button>
+					<label class="landing-field"><span class="sr-only">Room code</span><input type="text" name="code" required placeholder="Room code" inputmode="text" autocapitalize="characters" autocomplete="one-time-code"/></label>
+					<label class="landing-field"><span class="sr-only">Name</span><input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
+					<button type="submit" class="button-secondary">Join</button>
 				</form>
 			</div>
 		</div>
+
+		<p class="landing-meta">Self-hosted · fast room links · hidden info stays scoped</p>
 	</section>
 }
 

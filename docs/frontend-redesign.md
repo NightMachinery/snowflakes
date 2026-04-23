@@ -38,8 +38,29 @@ Those references drove the implemented design system: dark winter-night backdrop
 - `internal/snowflakes/render.go`
 - `internal/snowflakes/static/styles.css`
 - `internal/snowflakes/static/app.js`
+- `internal/snowflakes/static/landing-sky.png`
+- `self_host.zsh`
 
 ## Verification
 - `templ generate -path internal/snowflakes`
 - `gofmt -w internal/snowflakes/render.go`
 - `go test ./...`
+
+
+## Aurora landing recovery (2026-04-24)
+- Restored the landing toward the stronger saved references in `~/.codex/generated_images/` instead of the flatter intermediate version.
+- Switched the hero back to a centered editorial composition with a quieter wordmark, more breathing room, and a single refined action dock.
+- Added a generated cinematic aurora landscape plate at `internal/snowflakes/static/landing-sky.png` and layered subtle animated aurora motion back over it so the homepage reads as a real northern-sky scene again.
+- Kept the room/gameplay shell intact while making sure the room UI still rendered correctly after the landing changes.
+
+## Self-hosting workflow updates (2026-04-24)
+- Added `./self_host.zsh dev-start [public-url]` for tmux-managed development rebuilds.
+- Made `setup`, `redeploy`, `start`, `dev-start`, and `stop` coordinate so `start` and `dev-start` cleanly replace each other instead of overlapping.
+- Fixed the initial watcher bug where generated `*_templ.go` files caused rebuild loops.
+
+## Verification (2026-04-24)
+- `./self_host.zsh dev-start http://justone.pinky.lilf.ir`
+- `./self_host.zsh start`
+- `./self_host.zsh dev-start http://justone.pinky.lilf.ir`
+- `go test ./...`
+- Chrome MCP review on the official URL for both landing and room creation flow

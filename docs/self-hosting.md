@@ -11,7 +11,8 @@
 ## Default URL and runtime
 - Default public URL: `http://justone.pinky.lilf.ir`
 - Internal bind: `127.0.0.1:3400`
-- tmux session: `snowflakes-self-host`
+- tmux app session: `snowflakes-self-host`
+- tmux dev session: `snowflakes-self-host-dev`
 - Runtime files: `.self-host/`
 - Extra word packs: `~/.snowflakes/wordpacks/` or `SNOWFLAKES_WORDPACK_DIR`
 
@@ -25,6 +26,7 @@ If your shell already has proxy variables set (for example `HTTP_PROXY`, `HTTPS_
 ./self_host.zsh setup [public-url]
 ./self_host.zsh redeploy [public-url]
 ./self_host.zsh start
+./self_host.zsh dev-start [public-url]
 ./self_host.zsh stop
 ```
 
@@ -34,23 +36,33 @@ If your shell already has proxy variables set (for example `HTTP_PROXY`, `HTTPS_
 - writes runtime env/state files
 - adds or replaces the managed `Snowflakes` block in `~/Caddyfile`
 - reloads Caddy
-- starts the app in tmux
+- stops any existing `start` or `dev-start` session before launching the app
 
 ### `redeploy`
 - reruns `templ generate -path internal/snowflakes`
 - rebuilds the current local checkout
 - rewrites the managed Caddy block if a new URL is provided
 - reloads Caddy
-- restarts the tmux session
+- stops any existing `start` or `dev-start` session before launching the app
 
 ### `start`
 - starts the last configured build/env without rebuilding
+- stops any running `start` or `dev-start` session first
+
+### `dev-start`
+- reloads Caddy for the configured public URL
+- launches a tmux-managed development watcher
+- rebuilds on changes to Go, templ, CSS, JS, embedded word pack text, SVG, and the self-host script itself
+- restarts the app automatically after a successful rebuild
+- ignores generated `*_templ.go` outputs so the watcher does not rebuild-loop on its own generated files
+- stops any running `start` or `dev-start` session first
 
 ### `stop`
-- stops the tmux session
+- stops both the normal app session and the dev watcher session
 
 ## Notes
 - URLs must be host-only (`http://host` or `https://host`). Path prefixes are not supported.
 - No Docker is used.
 - `redeploy` deploys the latest **local** changes; it does not fetch or pull anything.
 - Generated `templ` Go files are not committed; local builds and deploys generate them on demand.
+- On this VPS, run the manual machine-health preflight before build-like commands (`setup`, `redeploy`, `dev-start`, `go test`, etc.). Those checks intentionally stay outside the script.
