@@ -246,6 +246,28 @@ If we wanted to simplify later, the cleanest direction would likely be:
 - keep this repo-specific wrapper for tmux/Caddy/env/state, but
 - replace the homemade polling watcher with `templ --watch`, Air, Reflex, or watchexec.
 
+## Why not just use `templ generate --watch`?
+
+We probably **could**, but it is not a drop-in replacement for the current workflow.
+
+The official `templ` live-reload flow is aimed at local development: it watches `*.templ` and `*.go`, can restart a command, and serves a browser-reload proxy on `localhost:7331` by default.
+
+For this repo, the gaps are mostly around workflow ownership rather than templ itself:
+
+- current `dev-start` also manages **tmux**
+- it rewrites and reloads the repo's managed **Caddy** block
+- it persists the chosen **public URL** and runtime env in `.self-host/`
+- it coordinates with `setup`, `start`, `redeploy`, and `stop`
+- it currently rebuilds on some non-Go/non-templ assets too (`.css`, `.js`, `.txt`, `.svg`)
+
+So the real answer is not “templ can't do live reload” — it clearly can. The answer is “templ live reload solves the inner dev loop, while this script currently also owns the surrounding remote self-host workflow.”
+
+If we simplify later, the most likely good direction is:
+
+1. keep the repo-specific wrapper for tmux/Caddy/state/env
+2. replace the homemade polling watcher with `templ generate --watch`
+3. optionally let Caddy front the templ proxy, or switch dev mode to a direct templ proxy URL
+
 ## External references
 
 - templ live reload docs: <https://templ.guide/developer-tools/live-reload/>
