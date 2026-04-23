@@ -10,47 +10,47 @@ templ page(data PageData) {
 			<link rel="stylesheet" href="/static/styles.css"/>
 		</head>
 		<body
+			class={ pageClass(data) }
 			if data.HasRoom && data.Room != nil {
 				data-room-code={ data.Room.Code }
 			}
 		>
-			<header class="topbar">
-				<div class="topbar-inner">
-					<h1><a href="/">❄️ Snowflakes</a></h1>
+			<div class="page-backdrop" aria-hidden="true">
+				<div class="page-backdrop__glow page-backdrop__glow--one"></div>
+				<div class="page-backdrop__glow page-backdrop__glow--two"></div>
+				<div class="page-backdrop__glow page-backdrop__glow--three"></div>
+			</div>
+			<header class="site-header">
+				<div class="site-header__inner">
+					<a class="brand-mark" href="/">
+						<span class="brand-mark__icon">❄️</span>
+						<span class="brand-mark__copy">
+							<strong>Snowflakes</strong>
+							<small>Self-hosted hidden-info party room</small>
+						</span>
+					</a>
+					<div class="site-header__meta">
+						if data.HasRoom && data.Room != nil {
+							<span class="header-chip">Room { data.Room.Code }</span>
+							if data.Room.ViewerName != "" {
+								<span class="header-chip header-chip--ghost">{ data.Room.ViewerName } · { data.Room.ViewerRole }</span>
+							} else {
+								<span class="header-chip header-chip--ghost">Join to see your role</span>
+							}
+						} else {
+							<span class="header-chip">Self-hosted party game</span>
+							<span class="header-chip header-chip--ghost">Private rooms · live sync · custom packs</span>
+						}
+					</div>
 				</div>
 			</header>
 			if data.HasRoom && data.Room != nil {
-				<main id="room-root" class="page-shell">
+				<main id="room-root" class="page-frame room-page">
 					@roomInner(*data.Room)
 				</main>
 			} else {
-				<main class="page-shell landing-shell">
-					<section class="hero panel panel-hero">
-						<div>
-							<p class="eyebrow">Self-hosted party game</p>
-							<h2>Spin up a room, share the link, and keep the hidden info actually hidden.</h2>
-							<p class="muted">Light by default, fast to join, and easier to run without leaking the secret word to guessers.</p>
-						</div>
-					</section>
-					<div class="landing-grid">
-						<section class="panel">
-							<p class="eyebrow">Start fresh</p>
-							<h3>Create room</h3>
-							<form method="post" action="/rooms" class="stacked">
-								<label>Name <input type="text" name="name" required placeholder="Your name"/></label>
-								<button type="submit">Create room</button>
-							</form>
-						</section>
-						<section class="panel">
-							<p class="eyebrow">Jump back in</p>
-							<h3>Join room</h3>
-							<form method="post" action="/rooms/join" class="stacked">
-								<label>Room code <input type="text" name="code" required placeholder="ABCDE"/></label>
-								<label>Name <input type="text" name="name" required placeholder="Your name"/></label>
-								<button type="submit">Join room</button>
-							</form>
-						</section>
-					</div>
+				<main class="page-frame landing-page">
+					@landingInner()
 				</main>
 			}
 			<script src="/static/app.js"></script>
@@ -58,123 +58,202 @@ templ page(data PageData) {
 	</html>
 }
 
-templ roomInner(view RoomView) {
-	<div class="room-shell">
-		<section class="panel room-hero">
-			<div class="room-hero-main">
-				<p class="eyebrow">Room { view.Code }</p>
-				<h2>Share the link and keep the round moving.</h2>
-				<div class="share-row">
-					<a href={ view.PublicURL }>{ view.PublicURL }</a>
-					<button type="button" class="button-secondary" data-copy-text={ view.PublicURL }>Copy link</button>
+templ landingInner() {
+	<div class="landing-shell">
+		<section class="surface surface--hero landing-hero">
+			<div class="landing-hero__copy">
+				<p class="kicker">Self-hosted party game</p>
+				<h1 class="display-title">Keep the secret word hidden without slowing the room down.</h1>
+				<p class="body-copy body-copy--wide">Spin up a room, share the link, and guide every round from a calm control surface built to protect hidden information.</p>
+				<div class="hero-actions">
+					<a class="button-link" href="#create-room">Create room</a>
+					<a class="button-link button-link--ghost" href="#join-room">Join room</a>
 				</div>
-				<div class="stats-row">
-					<span class="stat-pill">Status: { view.Status }</span>
-					<span class="stat-pill">Won: { itoa(view.Won) }</span>
-					<span class="stat-pill">Remaining: { itoa(view.RemainingCards) }</span>
-				</div>
+				<ul class="trust-list">
+					<li>Self-hosted by default</li>
+					<li>Room links that are fast to share</li>
+					<li>Guessers only see what they should</li>
+				</ul>
 			</div>
-			<div class="room-hero-side">
-				if view.ViewerName != "" {
-					<p class="eyebrow">You are here</p>
-					<p class="viewer-name"><strong>{ view.ViewerName }</strong></p>
-					<div class="badge-row">
-						<span class="badge role">{ view.ViewerRole }</span>
-						if view.IsAdmin {
-							<span class="badge">admin</span>
-						}
+			<div class="landing-hero__visual">
+				<div class="hero-orb" aria-hidden="true">
+					<span class="hero-orb__ring hero-orb__ring--one"></span>
+					<span class="hero-orb__ring hero-orb__ring--two"></span>
+					<span class="hero-orb__core"></span>
+				</div>
+				<div class="hero-console surface surface--soft">
+					<div class="hero-console__row">
+						<span>Private room</span>
+						<strong>ABCDE</strong>
 					</div>
-				} else {
-					<p class="eyebrow">Join this room</p>
-					<form method="post" action="/rooms/join" class="stacked">
-						<input type="hidden" name="code" value={ view.Code }/>
-						<label>Name <input type="text" name="name" required placeholder="Your name"/></label>
-						<button type="submit">Join room</button>
-					</form>
-				}
+					<div class="hero-console__row">
+						<span>Hidden info</span>
+						<strong>Scoped by role</strong>
+					</div>
+					<div class="hero-console__row">
+						<span>Round flow</span>
+						<strong>Choose → clue → review → guess</strong>
+					</div>
+				</div>
 			</div>
 		</section>
 
+		<section class="landing-dock">
+			<article id="create-room" class="surface form-panel form-panel--primary">
+				<div class="form-panel__intro">
+					<p class="kicker">Start fresh</p>
+					<h2 class="section-title">Create room</h2>
+					<p class="body-copy body-copy--muted">Open a new room, become the first admin, and invite everyone else in with one link.</p>
+				</div>
+				<form method="post" action="/rooms" class="stacked form-stack">
+					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
+					<button type="submit">Create room</button>
+				</form>
+			</article>
+			<article id="join-room" class="surface form-panel">
+				<div class="form-panel__intro">
+					<p class="kicker">Jump back in</p>
+					<h2 class="section-title">Join room</h2>
+					<p class="body-copy body-copy--muted">Paste the room code, keep your name handy, and re-enter the table in seconds.</p>
+				</div>
+				<form method="post" action="/rooms/join" class="stacked form-stack">
+					<label>Room code <input type="text" name="code" required placeholder="ABCDE" inputmode="text" autocapitalize="characters" autocomplete="one-time-code"/></label>
+					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
+					<button type="submit">Join room</button>
+				</form>
+			</article>
+		</section>
+
+		<section class="landing-features" aria-label="Why Snowflakes works well for hidden-info rooms">
+			<article class="surface feature-card">
+				<p class="kicker">Privacy first</p>
+				<h3>Hidden information stays hidden.</h3>
+				<p class="body-copy body-copy--muted">Guessers wait on the clean view while clue-givers and controllers get the word controls they need.</p>
+			</article>
+			<article class="surface feature-card">
+				<p class="kicker">Fast pacing</p>
+				<h3>Everyone sees the room update live.</h3>
+				<p class="body-copy body-copy--muted">Link sharing, event refresh, and tight round states make the game feel immediate without becoming noisy.</p>
+			</article>
+			<article class="surface feature-card">
+				<p class="kicker">Flexible hosting</p>
+				<h3>Use defaults or bring your own pack.</h3>
+				<p class="body-copy body-copy--muted">Admins can tune the round structure, swap word packs, and keep the table matched to the group.</p>
+			</article>
+		</section>
+	</div>
+}
+
+templ roomInner(view RoomView) {
+	<div class="room-shell">
+		@roomHero(view)
+
 		if view.Flash != "" {
-			<div class="flash-banner">{ view.Flash }</div>
+			<div class="flash-banner" role="status">{ view.Flash }</div>
 		}
 
-		<div class="room-layout">
+		<div class="room-workspace">
 			<div class="room-main">
-				<section class="panel stage-panel">
-					<div class="section-heading">
+				<section class="surface stage-shell">
+					<div class="stage-shell__top">
 						<div>
-							<p class="eyebrow">Current step</p>
-							if view.Round == nil {
-								if view.GamePaused {
-									<h3>Game paused</h3>
-								} else {
-									<h3>Ready to start</h3>
-								}
-							} else if view.Round.Phase == "word_selection" {
-								<h3>Choose the target word</h3>
-							} else if view.Round.Phase == "clue_entry" {
-								<h3>Collect clues</h3>
-							} else if view.Round.Phase == "clue_review" {
-								<h3>Review invalid clues</h3>
-							} else if view.Round.Phase == "guess_entry" {
-								<h3>Make the guess</h3>
-							} else {
-								<h3>Round resolved</h3>
-							}
+							<p class="kicker">Current step</p>
+							<h2 class="section-title">{ stageTitle(view) }</h2>
+							<p class="body-copy body-copy--muted">{ stageContext(view) }</p>
 						</div>
 						if view.Round != nil {
-							<span class="phase-pill">{ view.Round.Phase }</span>
+							<span class={ phaseBadgeClass(view.Round.Phase) }>{ displayEnum(view.Round.Phase) }</span>
 						}
 					</div>
 
-					if view.Round == nil {
-						if view.GamePaused {
-							<p class="lead">The game is paused because fewer than 2 players are available. Add players to auto-restart the current round.</p>
-						} else {
-							<p class="lead">No round is active yet. Confirm your players and settings, then kick off a new 13-card game.</p>
-						}
-						if view.IsAdmin && view.CanStartGame {
-							<form method="post" action={ roomActionPath(view.Code, "start") } data-ajax="true">
-								<button type="submit">Start new 13-card game</button>
-							</form>
-						}
-					} else {
-						<div class="meta-grid">
-							<div class="meta-card">
-								<span class="eyebrow">Guessers</span>
-								<strong>{ commaSeparated(view.Round.ActiveGuessers) }</strong>
-							</div>
-							<div class="meta-card">
-								<span class="eyebrow">Clue-givers</span>
-								<strong>{ commaSeparated(view.Round.CluegiverNames) }</strong>
-							</div>
-							if len(view.Round.RoundControllers) > 0 {
-								<div class="meta-card">
-									<span class="eyebrow">Round controller</span>
-									<strong>{ commaSeparated(view.Round.RoundControllers) }</strong>
-								</div>
-							}
+					<ul class="journey-strip" aria-label="Round progression">
+						<li class={ journeyStepClass(view.Round, "word_selection") }>
+							<span class="journey-step__eyebrow">01</span>
+							<strong>Choose word</strong>
+						</li>
+						<li class={ journeyStepClass(view.Round, "clue_entry") }>
+							<span class="journey-step__eyebrow">02</span>
+							<strong>Collect clues</strong>
+						</li>
+						<li class={ journeyStepClass(view.Round, "clue_review") }>
+							<span class="journey-step__eyebrow">03</span>
+							<strong>Review</strong>
+						</li>
+						<li class={ journeyStepClass(view.Round, "guess_entry") }>
+							<span class="journey-step__eyebrow">04</span>
+							<strong>Guess</strong>
+						</li>
+						<li class={ journeyStepClass(view.Round, "round_resolved") }>
+							<span class="journey-step__eyebrow">05</span>
+							<strong>Resolve</strong>
+						</li>
+					</ul>
+
+					if view.Round != nil {
+						<div class="signal-grid">
+							<article class="signal-card">
+								<span class="signal-card__label">Guessers</span>
+								<strong>{ listOrFallback(view.Round.ActiveGuessers, "Waiting") }</strong>
+							</article>
+							<article class="signal-card">
+								<span class="signal-card__label">Clue-givers</span>
+								<strong>{ listOrFallback(view.Round.CluegiverNames, "Waiting") }</strong>
+							</article>
+							<article class="signal-card">
+								<span class="signal-card__label">Round controller</span>
+								<strong>{ listOrFallback(view.Round.RoundControllers, "Auto-assigned") }</strong>
+							</article>
 						</div>
 
-						if view.Round.CanSeeTarget {
-							<div class="focus-card target-card">
-								<span class="eyebrow">Target word</span>
-								<strong>{ view.Round.TargetWord }</strong>
-							</div>
-						}
-						if view.Round.CanSeeCardPool {
-							<div class="focus-card">
-								if view.Round.Phase == "guess_entry" || view.Round.Phase == "round_resolved" {
-									<span class="eyebrow">Answer bank</span>
-								} else {
-									<span class="eyebrow">Card pool</span>
+						if view.Round.CanSeeTarget || view.Round.CanSeeCardPool {
+							<div class="spotlight-grid">
+								if view.Round.CanSeeTarget {
+									<article class="surface surface--soft spotlight-card spotlight-card--target">
+										<span class="signal-card__label">Target word</span>
+										<strong>{ view.Round.TargetWord }</strong>
+									</article>
 								}
-								<p>{ commaSeparated(view.Round.CardPool) }</p>
+								if view.Round.CanSeeCardPool {
+									<article class="surface surface--soft spotlight-card">
+										if view.Round.Phase == "guess_entry" || view.Round.Phase == "round_resolved" {
+											<span class="signal-card__label">Answer bank</span>
+										} else {
+											<span class="signal-card__label">Card pool</span>
+										}
+										<p>{ commaSeparated(view.Round.CardPool) }</p>
+									</article>
+								}
 							</div>
 						}
+					}
 
-						if view.Round.Phase == "word_selection" {
+					<div class="stage-shell__body">
+						if view.Round == nil {
+							<div class="state-stack">
+								if view.GamePaused {
+									<p class="lead">The game is paused because fewer than 2 players are available. Add players to auto-restart the current round.</p>
+								} else {
+									<p class="lead">No round is active yet. Confirm your players and settings, then kick off a new 13-card game.</p>
+								}
+								<div class="state-grid">
+									<article class="surface surface--soft detail-card">
+										<span class="signal-card__label">Room rhythm</span>
+										<strong>Choose → clue → review → guess</strong>
+										<p class="body-copy body-copy--muted">Every round keeps the guessers blind until the valid clues are ready to reveal.</p>
+									</article>
+									<article class="surface surface--soft detail-card">
+										<span class="signal-card__label">Deck plan</span>
+										<strong>13-card game</strong>
+										<p class="body-copy body-copy--muted">Wins advance the room. Wrong answers burn extra momentum. The flow is built to keep the table moving.</p>
+									</article>
+								</div>
+								if view.IsAdmin && view.CanStartGame {
+									<form method="post" action={ roomActionPath(view.Code, "start") } data-ajax="true">
+										<button type="submit">Start new 13-card game</button>
+									</form>
+								}
+							</div>
+						} else if view.Round.Phase == "word_selection" {
 							if view.Settings.WordSelectionMode == "admin_pick" {
 								if view.Round.CanManageRound {
 									<p class="lead">Choose the hidden word from the visible list. Active guessers stay blind.</p>
@@ -188,8 +267,10 @@ templ roomInner(view RoomView) {
 								if view.Round.CanSeeChoiceWords {
 									<div class="choice-grid">
 										for _, choice := range view.Round.ChoiceSlate {
-											<div class="choice-card">
-												<span class="eyebrow">Choice { itoa(choice.DisplayNumber) }</span>
+											<article class="surface surface--soft choice-card choice-card--stacked">
+												<div class="choice-card__header">
+													<span class="signal-card__label">Choice { itoa(choice.DisplayNumber) }</span>
+												</div>
 												<strong>{ choice.Word }</strong>
 												if view.Round.CanManageRound {
 													<form method="post" action={ roomActionPath(view.Code, "finalize") } data-ajax="true">
@@ -197,7 +278,7 @@ templ roomInner(view RoomView) {
 														<button type="submit">Choose this word</button>
 													</form>
 												}
-											</div>
+											</article>
 										}
 									</div>
 								}
@@ -214,47 +295,54 @@ templ roomInner(view RoomView) {
 								if view.Round.CanSeeChoiceWords {
 									<div class="choice-grid">
 										for _, choice := range view.Round.ChoiceSlate {
-											<div class="choice-card">
-												<span class="eyebrow">Choice { itoa(choice.DisplayNumber) }</span>
+											<article class="surface surface--soft choice-card choice-card--stacked">
+												<div class="choice-card__header">
+													<span class="signal-card__label">Choice { itoa(choice.DisplayNumber) }</span>
+													if choice.Selected {
+														<span class="badge badge--violet">Selected</span>
+													}
+												</div>
 												<strong>{ choice.Word }</strong>
-												<p class="muted">Votes: { itoa(choice.Votes) }</p>
-												if view.Round.EligibleCluegiver {
-													<form method="post" action={ roomActionPath(view.Code, "vote") } data-ajax="true">
-														<input type="hidden" name="index" value={ itoa(choice.Index) }/>
-														if choice.VotedByYou {
-															<button type="submit" class="button-secondary">Voted</button>
-														} else {
-															<button type="submit" class="button-secondary">Vote</button>
-														}
-													</form>
-												}
-												if view.Round.CanManageRound {
-													<form method="post" action={ roomActionPath(view.Code, "finalize") } data-ajax="true">
-														<input type="hidden" name="index" value={ itoa(choice.Index) }/>
-														if choice.Selected {
-															<button type="submit">Selected</button>
-														} else {
-															<button type="submit">Choose this word</button>
-														}
-													</form>
-												}
-											</div>
+												<p class="body-copy body-copy--muted">Votes: { itoa(choice.Votes) }</p>
+												<div class="choice-card__actions">
+													if view.Round.EligibleCluegiver {
+														<form method="post" action={ roomActionPath(view.Code, "vote") } data-ajax="true">
+															<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+															if choice.VotedByYou {
+																<button type="submit" class="button-secondary">Voted</button>
+															} else {
+																<button type="submit" class="button-secondary">Vote</button>
+															}
+														</form>
+													}
+													if view.Round.CanManageRound {
+														<form method="post" action={ roomActionPath(view.Code, "finalize") } data-ajax="true">
+															<input type="hidden" name="index" value={ itoa(choice.Index) }/>
+															if choice.Selected {
+																<button type="submit">Selected</button>
+															} else {
+																<button type="submit">Choose this word</button>
+															}
+														</form>
+													}
+												</div>
+											</article>
 										}
 									</div>
 								}
 							}
-						}
-
-						if view.Round.Phase == "clue_entry" {
+						} else if view.Round.Phase == "clue_entry" {
 							if view.Round.EligibleCluegiver {
 								<p class="lead">Enter all required clues, then submit them together. Matching clues are automatically invalidated in review.</p>
-								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="stacked">
-									<div class="stacked">
+								<form method="post" action={ roomActionPath(view.Code, "clue") } data-ajax="true" class="stacked form-stack">
+									<div class="clue-entry-grid">
 										for _, entry := range view.Round.ClueEntries {
 											<label>Clue { itoa(entry.Slot) } <input type="text" name={ clueFieldName(entry.Slot) } value={ entry.Text } required pattern=".*\S.*" title="Clue cannot be blank or whitespace only."/></label>
 										}
 									</div>
-									<p class="muted">Your clues: { itoa(view.Round.YourClueCount) } / { itoa(view.Round.ClueSlots) } · Round progress: { itoa(view.Round.SubmittedPlayers) } / { itoa(view.Round.TotalCluegivers) } clue-givers finished</p>
+									<div class="surface surface--soft progress-strip">
+										<p class="body-copy body-copy--muted">Your clues: { itoa(view.Round.YourClueCount) } / { itoa(view.Round.ClueSlots) } · Round progress: { itoa(view.Round.SubmittedPlayers) } / { itoa(view.Round.TotalCluegivers) } clue-givers finished</p>
+									</div>
 									<button type="submit">
 										if view.Round.YourClueCount == view.Round.ClueSlots {
 											Update clues
@@ -268,9 +356,7 @@ templ roomInner(view RoomView) {
 							} else {
 								<p class="lead">Waiting for clue-givers to finish submitting clues.</p>
 							}
-						}
-
-						if view.Round.Phase == "clue_review" {
+						} else if view.Round.Phase == "clue_review" {
 							<p class="lead">Review duplicates and any manually invalid clues before the guessers see them.</p>
 							<ul class="clues-list">
 								for _, clue := range view.Round.Clues {
@@ -281,11 +367,11 @@ templ roomInner(view RoomView) {
 											class="clue-item"
 										}
 									>
-										<div>
+										<div class="clue-item__copy">
 											<strong>{ clue.PlayerName } #{ itoa(clue.Slot) }</strong>
 											<p>{ clue.Text }</p>
 											if clue.Invalid {
-												<span class="badge bad">
+												<span class="badge badge--rose">
 													if clue.Duplicate {
 														duplicate
 													} else {
@@ -312,12 +398,10 @@ templ roomInner(view RoomView) {
 									<button type="submit">Reveal valid clues</button>
 								</form>
 							}
-						}
-
-						if view.Round.Phase == "guess_entry" {
+						} else if view.Round.Phase == "guess_entry" {
 							<p class="lead">Use the valid clues to make the best guess.</p>
-							<div class="focus-card">
-								<span class="eyebrow">Visible clues</span>
+							<div class="surface surface--soft spotlight-card">
+								<span class="signal-card__label">Visible clues</span>
 								<p>{ commaSeparated(view.Round.VisibleClues) }</p>
 							</div>
 							if view.Round.ActiveGuesser && (view.Round.Spokesperson || view.Settings.GuessSubmissionMode == "one_each") {
@@ -353,15 +437,13 @@ templ roomInner(view RoomView) {
 									<form method="post" action={ roomActionPath(view.Code, "resolve") } data-ajax="true"><input type="hidden" name="result" value="pass"/><button type="submit" class="button-secondary">Mark pass</button></form>
 								</div>
 							}
-						}
-
-						if view.Round.Phase == "round_resolved" {
-							<div class="result-banner">
-								<span class="eyebrow">Round result</span>
+						} else if view.Round.Phase == "round_resolved" {
+							<div class={ resultBannerClass(view.Round.Result) }>
+								<span class="signal-card__label">Round result</span>
 								<strong>{ view.Round.Result }</strong>
 							</div>
-							<div class="focus-card">
-								<span class="eyebrow">Valid clues</span>
+							<div class="surface surface--soft spotlight-card">
+								<span class="signal-card__label">Valid clues</span>
 								<p>{ commaSeparated(view.Round.VisibleClues) }</p>
 							</div>
 							if view.CanShowNextRound && view.Round.CanManageRound {
@@ -370,16 +452,16 @@ templ roomInner(view RoomView) {
 								</form>
 							}
 						}
-					}
+					</div>
 				</section>
 			</div>
 
-			<aside class="room-sidebar">
-				<section class="panel">
-					<div class="section-heading compact">
+			<aside class="room-rail">
+				<section class="surface rail-card">
+					<div class="rail-card__header">
 						<div>
-							<p class="eyebrow">People</p>
-							<h3>Players { itoa(view.PlayerCount) } · Observers { itoa(view.ObserverCount) }</h3>
+							<p class="kicker">People</p>
+							<h3 class="section-title section-title--sm">Players { itoa(view.PlayerCount) } · Observers { itoa(view.ObserverCount) }</h3>
 						</div>
 					</div>
 					<ul class="participants-list">
@@ -387,21 +469,24 @@ templ roomInner(view RoomView) {
 							<li class="participant-card">
 								<div class="participant-main">
 									<div class="participant-name-row">
-										<strong>{ participant.Name }</strong>
+										<span class="participant-avatar" aria-hidden="true">{ firstInitial(participant.Name) }</span>
+										<div>
+											<strong>{ participant.Name }</strong>
+											<div class="badge-row">
+												if participant.Creator {
+													<span class="badge">creator</span>
+												}
+												if participant.Admin {
+													<span class="badge">admin</span>
+												}
+												<span class="badge badge--violet">{ participant.Role }</span>
+												if participant.PendingRole != "" {
+													<span class="badge badge--gold">next: { participant.PendingRole }</span>
+												}
+											</div>
+										</div>
 										if participant.RoundController {
 											<span class="participant-icon" role="img" aria-label="Round controller" title="Round controller">🕹️</span>
-										}
-									</div>
-									<div class="badge-row">
-										if participant.Creator {
-											<span class="badge">creator</span>
-										}
-										if participant.Admin {
-											<span class="badge">admin</span>
-										}
-										<span class="badge role">{ participant.Role }</span>
-										if participant.PendingRole != "" {
-											<span class="badge pending">next: { participant.PendingRole }</span>
 										}
 									</div>
 								</div>
@@ -434,15 +519,15 @@ templ roomInner(view RoomView) {
 					</ul>
 				</section>
 
-				<section class="panel">
-					<div class="section-heading compact">
+				<section class="surface rail-card">
+					<div class="rail-card__header">
 						<div>
-							<p class="eyebrow">Room setup</p>
-							<h3>Settings</h3>
+							<p class="kicker">Room setup</p>
+							<h3 class="section-title section-title--sm">Settings</h3>
 						</div>
 					</div>
 					if view.IsAdmin {
-						<form method="post" action={ roomActionPath(view.Code, "settings") } data-ajax="true" class="stacked">
+						<form method="post" action={ roomActionPath(view.Code, "settings") } data-ajax="true" class="stacked form-stack settings-stack">
 							<label>Word pack
 								<select name="selected_pack">
 									for _, pack := range view.Packs {
@@ -450,38 +535,46 @@ templ roomInner(view RoomView) {
 									}
 								</select>
 							</label>
-							<label>Guessers <input type="number" min="1" name="guesser_count" value={ itoa(view.Settings.GuesserCount) }/></label>
-							<label>Word selection mode
-								<select name="word_selection_mode">
-									<option value="admin_pick" selected?={ view.Settings.WordSelectionMode == "admin_pick" }>admin picks</option>
-									<option value="player_vote" selected?={ view.Settings.WordSelectionMode == "player_vote" }>player vote</option>
-								</select>
-							</label>
+							<div class="settings-grid">
+								<label>Guessers <input type="number" min="1" name="guesser_count" value={ itoa(view.Settings.GuesserCount) }/></label>
+								<label>Word selection mode
+									<select name="word_selection_mode">
+										<option value="admin_pick" selected?={ view.Settings.WordSelectionMode == "admin_pick" }>admin picks</option>
+										<option value="player_vote" selected?={ view.Settings.WordSelectionMode == "player_vote" }>player vote</option>
+									</select>
+								</label>
+							</div>
 							<label class="checkbox"><input type="checkbox" name="show_card_pool_to_guessers" value="1" checked?={ view.Settings.ShowCardPoolToGuessers }/> Show answer bank to guessers during guess phase</label>
 							<details class="settings-details" data-preserve-open="settings-advanced">
 								<summary>Advanced round settings</summary>
 								<div class="stacked settings-advanced-body">
-									<label>Card pool size <input type="number" min="1" name="card_pool_size" value={ itoa(view.Settings.CardPoolSize) }/></label>
-									<label>Choice slate size <input type="number" min="1" name="choice_slate_size" value={ itoa(view.Settings.ChoiceSlateSize) }/></label>
-									<label>Clue slots mode
-										<select name="clue_slots_mode">
-											<option value="auto" selected?={ view.Settings.ClueSlotsMode == "auto" }>auto</option>
-											<option value="fixed" selected?={ view.Settings.ClueSlotsMode == "fixed" }>fixed</option>
-										</select>
-									</label>
-									<label>Fixed clue slots <input type="number" min="1" name="fixed_clue_slots" value={ itoa(view.Settings.FixedClueSlots) }/></label>
-									<label>Guess submission mode
-										<select name="guess_submission_mode">
-											<option value="spokesperson" selected?={ view.Settings.GuessSubmissionMode == "spokesperson" }>spokesperson</option>
-											<option value="one_each" selected?={ view.Settings.GuessSubmissionMode == "one_each" }>one guess each</option>
-										</select>
-									</label>
-									<label>Guess resolution mode
-										<select name="guess_resolution_mode">
-											<option value="auto_exact_else_admin" selected?={ view.Settings.GuessResolutionMode == "auto_exact_else_admin" }>auto exact, else admin</option>
-											<option value="admin_only" selected?={ view.Settings.GuessResolutionMode == "admin_only" }>admin only</option>
-										</select>
-									</label>
+									<div class="settings-grid">
+										<label>Card pool size <input type="number" min="1" name="card_pool_size" value={ itoa(view.Settings.CardPoolSize) }/></label>
+										<label>Choice slate size <input type="number" min="1" name="choice_slate_size" value={ itoa(view.Settings.ChoiceSlateSize) }/></label>
+									</div>
+									<div class="settings-grid">
+										<label>Clue slots mode
+											<select name="clue_slots_mode">
+												<option value="auto" selected?={ view.Settings.ClueSlotsMode == "auto" }>auto</option>
+												<option value="fixed" selected?={ view.Settings.ClueSlotsMode == "fixed" }>fixed</option>
+											</select>
+										</label>
+										<label>Fixed clue slots <input type="number" min="1" name="fixed_clue_slots" value={ itoa(view.Settings.FixedClueSlots) }/></label>
+									</div>
+									<div class="settings-grid">
+										<label>Guess submission mode
+											<select name="guess_submission_mode">
+												<option value="spokesperson" selected?={ view.Settings.GuessSubmissionMode == "spokesperson" }>spokesperson</option>
+												<option value="one_each" selected?={ view.Settings.GuessSubmissionMode == "one_each" }>one guess each</option>
+											</select>
+										</label>
+										<label>Guess resolution mode
+											<select name="guess_resolution_mode">
+												<option value="auto_exact_else_admin" selected?={ view.Settings.GuessResolutionMode == "auto_exact_else_admin" }>auto exact, else admin</option>
+												<option value="admin_only" selected?={ view.Settings.GuessResolutionMode == "admin_only" }>admin only</option>
+											</select>
+										</label>
+									</div>
 								</div>
 							</details>
 							<button type="submit">Save settings</button>
@@ -500,7 +593,7 @@ templ roomInner(view RoomView) {
 						<ul class="summary-list">
 							<li><span>Word pack</span><strong>{ view.Settings.SelectedPack }</strong></li>
 							<li><span>Guessers</span><strong>{ itoa(view.Settings.GuesserCount) }</strong></li>
-							<li><span>Selection mode</span><strong>{ view.Settings.WordSelectionMode }</strong></li>
+							<li><span>Selection mode</span><strong>{ displayEnum(view.Settings.WordSelectionMode) }</strong></li>
 							<li><span>Pool / slate</span><strong>{ itoa(view.Settings.CardPoolSize) } / { itoa(view.Settings.ChoiceSlateSize) }</strong></li>
 						</ul>
 					}
@@ -508,4 +601,62 @@ templ roomInner(view RoomView) {
 			</aside>
 		</div>
 	</div>
+}
+
+templ roomHero(view RoomView) {
+	<section class="surface room-banner">
+		<div class="room-banner__main">
+			<div class="room-banner__eyebrow-row">
+				<p class="kicker">Room { view.Code }</p>
+				<span class={ statusBadgeClass(view.Status) }>Status: { view.Status }</span>
+			</div>
+			<h1 class="display-title room-display">Share the link and keep the round moving.</h1>
+			<p class="body-copy body-copy--wide">Self-host the table, protect the hidden word, and keep every player in sync without showing them what they should not see.</p>
+			<div class="share-strip">
+				<a class="share-link" href={ view.PublicURL }>{ view.PublicURL }</a>
+				<button type="button" class="button-secondary" data-copy-text={ view.PublicURL }>Copy link</button>
+			</div>
+			<div class="hero-stat-grid">
+				<article class="hero-stat">
+					<span>Won</span>
+					<strong>{ itoa(view.Won) }</strong>
+				</article>
+				<article class="hero-stat">
+					<span>Remaining</span>
+					<strong>{ itoa(view.RemainingCards) }</strong>
+				</article>
+				<article class="hero-stat">
+					<span>Current card</span>
+					<strong>{ itoa(view.CurrentCardNumber) }</strong>
+				</article>
+			</div>
+		</div>
+		<div class="surface surface--soft room-banner__side">
+			if view.ViewerName != "" {
+				<div class="viewer-card">
+					<div class="viewer-card__head">
+						<span class="viewer-avatar" aria-hidden="true">{ firstInitial(view.ViewerName) }</span>
+						<div>
+							<p class="kicker">You are here</p>
+							<p class="viewer-name"><strong>{ view.ViewerName }</strong></p>
+						</div>
+					</div>
+					<div class="badge-row">
+						<span class="badge badge--violet">{ view.ViewerRole }</span>
+						if view.IsAdmin {
+							<span class="badge">admin</span>
+						}
+					</div>
+				</div>
+			} else {
+				<p class="kicker">Join this room</p>
+				<h2 class="section-title section-title--sm">Join room</h2>
+				<form method="post" action="/rooms/join" class="stacked form-stack">
+					<input type="hidden" name="code" value={ view.Code }/>
+					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
+					<button type="submit">Join room</button>
+				</form>
+			}
+		</div>
+	</section>
 }

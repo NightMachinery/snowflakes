@@ -385,3 +385,158 @@ func mustInt(formValue string, fallback int) int {
 	}
 	return fallback
 }
+
+func pageClass(data PageData) string {
+	if data.HasRoom && data.Room != nil {
+		return "page-body page-body--room"
+	}
+	return "page-body page-body--landing"
+}
+
+func stageTitle(view RoomView) string {
+	if view.Round == nil {
+		if view.GamePaused {
+			return "Game paused"
+		}
+		return "Ready to start"
+	}
+	switch view.Round.Phase {
+	case string(PhaseWordSelection):
+		return "Choose the target word"
+	case string(PhaseClueEntry):
+		return "Collect clues"
+	case string(PhaseClueReview):
+		return "Review invalid clues"
+	case string(PhaseGuessEntry):
+		return "Make the guess"
+	default:
+		return "Round resolved"
+	}
+}
+
+func stageContext(view RoomView) string {
+	if view.Round == nil {
+		if view.GamePaused {
+			return "The room will restart the game flow as soon as enough players are available again."
+		}
+		return "Choose a word, collect clues, review conflicts, and send the guessers in only when the hidden info is safe."
+	}
+	switch view.Round.Phase {
+	case string(PhaseWordSelection):
+		return "Only the right roles see the word controls, so the table can move fast without leaking the answer."
+	case string(PhaseClueEntry):
+		return "Clue-givers stay focused on their submissions while guessers remain deliberately blind."
+	case string(PhaseClueReview):
+		return "Duplicate clues and manual invalidations are surfaced together before anything is revealed."
+	case string(PhaseGuessEntry):
+		return "Valid clues take center stage while guessers and controllers act from the same control surface."
+	default:
+		return "The round result, valid clues, and next-step controls all land in one clear finish state."
+	}
+}
+
+func displayEnum(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "_", " ")
+}
+
+func statusBadgeClass(value string) string {
+	switch value {
+	case string(GameRunning):
+		return "status-chip status-chip--emerald"
+	case string(GamePaused):
+		return "status-chip status-chip--gold"
+	case string(GameFinished):
+		return "status-chip status-chip--violet"
+	default:
+		return "status-chip status-chip--ice"
+	}
+}
+
+func phaseBadgeClass(value string) string {
+	switch value {
+	case string(PhaseWordSelection):
+		return "status-chip status-chip--violet"
+	case string(PhaseClueEntry):
+		return "status-chip status-chip--cyan"
+	case string(PhaseClueReview):
+		return "status-chip status-chip--gold"
+	case string(PhaseGuessEntry):
+		return "status-chip status-chip--emerald"
+	case string(PhaseResolved):
+		return "status-chip status-chip--rose"
+	default:
+		return "status-chip status-chip--ice"
+	}
+}
+
+func journeyStepClass(round *RoundView, step string) string {
+	current := journeyStepOrder("")
+	if round != nil {
+		current = journeyStepOrder(round.Phase)
+	}
+	target := journeyStepOrder(step)
+	className := "journey-step"
+	if current == 0 {
+		if target == 1 {
+			return className + " is-current"
+		}
+		return className
+	}
+	if target < current {
+		className += " is-complete"
+	}
+	if target == current {
+		className += " is-current"
+	}
+	return className
+}
+
+func journeyStepOrder(phase string) int {
+	switch phase {
+	case string(PhaseWordSelection):
+		return 1
+	case string(PhaseClueEntry):
+		return 2
+	case string(PhaseClueReview):
+		return 3
+	case string(PhaseGuessEntry):
+		return 4
+	case string(PhaseResolved):
+		return 5
+	default:
+		return 0
+	}
+}
+
+func listOrFallback(values []string, fallback string) string {
+	if len(values) == 0 {
+		return fallback
+	}
+	return commaSeparated(values)
+}
+
+func firstInitial(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "?"
+	}
+	for _, word := range strings.Fields(trimmed) {
+		for _, r := range word {
+			return strings.ToUpper(string(r))
+		}
+	}
+	return strings.ToUpper(string([]rune(trimmed)[0]))
+}
+
+func resultBannerClass(result string) string {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "correct":
+		return "result-banner result-banner--correct"
+	case "wrong":
+		return "result-banner result-banner--wrong"
+	case "pass":
+		return "result-banner result-banner--pass"
+	default:
+		return "result-banner"
+	}
+}
