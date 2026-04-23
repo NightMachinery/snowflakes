@@ -17,10 +17,16 @@ The redesign followed an image-first workflow using five generated visual refere
 
 Those references drove the implemented design system: dark winter-night backdrop, aurora accents, frosted surfaces, large readable type, and a cleaner control-room layout.
 
+## Landing refinement (2026-04-23, follow-up)
+- Simplified the landing into a single minimalist hero instead of a multi-block marketing layout.
+- Merged create/join into one refined frosted action dock.
+- Added a more prestigious animated northern aurora treatment for the landing background.
+- Kept room pages and gameplay UI intact while making the homepage calmer and more focused.
+
 ## New design system
-- Dark atmospheric shell with layered aurora glows
+- Dark atmospheric shell with layered aurora glows and a dedicated animated landing sky
 - Editorial serif display headlines with clean sans UI text
-- Large landing hero with direct create/join actions
+- Minimal single-hero landing with a shared create/join action dock
 - Room banner with share link, viewer identity, and high-level stats
 - Round journey strip for choose → clue → review → guess → resolve
 - Spacious stage content that keeps hidden-info states obvious

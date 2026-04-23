@@ -59,89 +59,41 @@ templ page(data PageData) {
 }
 
 templ landingInner() {
-	<div class="landing-shell">
-		<section class="surface surface--hero landing-hero">
-			<div class="landing-hero__copy">
-				<p class="kicker">Self-hosted party game</p>
-				<h1 class="display-title">Keep the secret word hidden without slowing the room down.</h1>
-				<p class="body-copy body-copy--wide">Spin up a room, share the link, and guide every round from a calm control surface built to protect hidden information.</p>
-				<div class="hero-actions">
-					<a class="button-link" href="#create-room">Create room</a>
-					<a class="button-link button-link--ghost" href="#join-room">Join room</a>
-				</div>
-				<ul class="trust-list">
-					<li>Self-hosted by default</li>
-					<li>Room links that are fast to share</li>
-					<li>Guessers only see what they should</li>
-				</ul>
-			</div>
-			<div class="landing-hero__visual">
-				<div class="hero-orb" aria-hidden="true">
-					<span class="hero-orb__ring hero-orb__ring--one"></span>
-					<span class="hero-orb__ring hero-orb__ring--two"></span>
-					<span class="hero-orb__core"></span>
-				</div>
-				<div class="hero-console surface surface--soft">
-					<div class="hero-console__row">
-						<span>Private room</span>
-						<strong>ABCDE</strong>
-					</div>
-					<div class="hero-console__row">
-						<span>Hidden info</span>
-						<strong>Scoped by role</strong>
-					</div>
-					<div class="hero-console__row">
-						<span>Round flow</span>
-						<strong>Choose → clue → review → guess</strong>
-					</div>
-				</div>
-			</div>
-		</section>
+	<section class="landing-shell landing-shell--minimal">
+		<div class="landing-shell__atmosphere" aria-hidden="true">
+			<span class="landing-shell__stars"></span>
+			<span class="landing-shell__band landing-shell__band--one"></span>
+			<span class="landing-shell__band landing-shell__band--two"></span>
+			<span class="landing-shell__band landing-shell__band--three"></span>
+			<span class="landing-shell__haze"></span>
+		</div>
 
-		<section class="landing-dock">
-			<article id="create-room" class="surface form-panel form-panel--primary">
-				<div class="form-panel__intro">
-					<p class="kicker">Start fresh</p>
-					<h2 class="section-title">Create room</h2>
-					<p class="body-copy body-copy--muted">Open a new room, become the first admin, and invite everyone else in with one link.</p>
-				</div>
-				<form method="post" action="/rooms" class="stacked form-stack">
+		<div class="landing-copy">
+			<p class="kicker">Self-hosted party game</p>
+			<h1 class="display-title landing-display">Keep the secret word hidden.</h1>
+			<p class="body-copy body-copy--wide landing-summary">Minimal room control for clue-givers, guessers, and quiet reveals—wrapped in a calmer Snowflakes landing.</p>
+			<p class="landing-meta">Self-hosted · fast room links · hidden info stays scoped</p>
+		</div>
+
+		<div class="landing-dock landing-dock--minimal surface surface--soft">
+			<div class="landing-dock__column landing-dock__column--create">
+				<p class="landing-dock__eyebrow">Create room</p>
+				<form method="post" action="/rooms" class="landing-form landing-form--create">
 					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
 					<button type="submit">Create room</button>
 				</form>
-			</article>
-			<article id="join-room" class="surface form-panel">
-				<div class="form-panel__intro">
-					<p class="kicker">Jump back in</p>
-					<h2 class="section-title">Join room</h2>
-					<p class="body-copy body-copy--muted">Paste the room code, keep your name handy, and re-enter the table in seconds.</p>
-				</div>
-				<form method="post" action="/rooms/join" class="stacked form-stack">
+			</div>
+			<div class="landing-dock__divider" aria-hidden="true"></div>
+			<div class="landing-dock__column landing-dock__column--join" id="join-room">
+				<p class="landing-dock__eyebrow">Join room</p>
+				<form method="post" action="/rooms/join" class="landing-form landing-form--join">
 					<label>Room code <input type="text" name="code" required placeholder="ABCDE" inputmode="text" autocapitalize="characters" autocomplete="one-time-code"/></label>
 					<label>Name <input type="text" name="name" required placeholder="Your name" autocomplete="nickname"/></label>
-					<button type="submit">Join room</button>
+					<button type="submit" class="button-secondary">Join room</button>
 				</form>
-			</article>
-		</section>
-
-		<section class="landing-features" aria-label="Why Snowflakes works well for hidden-info rooms">
-			<article class="surface feature-card">
-				<p class="kicker">Privacy first</p>
-				<h3>Hidden information stays hidden.</h3>
-				<p class="body-copy body-copy--muted">Guessers wait on the clean view while clue-givers and controllers get the word controls they need.</p>
-			</article>
-			<article class="surface feature-card">
-				<p class="kicker">Fast pacing</p>
-				<h3>Everyone sees the room update live.</h3>
-				<p class="body-copy body-copy--muted">Link sharing, event refresh, and tight round states make the game feel immediate without becoming noisy.</p>
-			</article>
-			<article class="surface feature-card">
-				<p class="kicker">Flexible hosting</p>
-				<h3>Use defaults or bring your own pack.</h3>
-				<p class="body-copy body-copy--muted">Admins can tune the round structure, swap word packs, and keep the table matched to the group.</p>
-			</article>
-		</section>
-	</div>
+			</div>
+		</div>
+	</section>
 }
 
 templ roomInner(view RoomView) {
