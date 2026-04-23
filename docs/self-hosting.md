@@ -50,6 +50,8 @@ If your shell already has proxy variables set (for example `HTTP_PROXY`, `HTTPS_
 - stops any running `start` or `dev-start` session first
 
 ### `dev-start`
+See also: [`docs/dev-start.md`](./dev-start.md) for the current implementation details and alternatives.
+
 - reloads Caddy for the configured public URL
 - launches a tmux-managed development watcher
 - rebuilds on changes to Go, templ, CSS, JS, embedded word pack text, SVG, and the self-host script itself
