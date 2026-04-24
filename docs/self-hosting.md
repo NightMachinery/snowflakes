@@ -7,6 +7,7 @@
 - `Caddy`
 - `python3`
 - a writable `~/Caddyfile`
+- no separate global `air` install is required; dev mode uses the repo-pinned `go tool air`
 
 ## Default URL and runtime
 - Default public URL: `http://justone.pinky.lilf.ir`
@@ -47,16 +48,19 @@ If your shell already has proxy variables set (for example `HTTP_PROXY`, `HTTPS_
 
 ### `start`
 - starts the last configured build/env without rebuilding
+- rewrites/reloads the managed Caddy block back to the normal app port
 - stops any running `start` or `dev-start` session first
 
 ### `dev-start`
 See also: [`docs/dev-start.md`](./dev-start.md) for the current implementation details and alternatives.
 
 - reloads Caddy for the configured public URL
-- launches a tmux-managed development watcher
+- launches a tmux-managed Air session via `go tool air -c .air.toml`
+- proxies public dev traffic through Air on `127.0.0.1:3401`, which forwards to the app on `127.0.0.1:3400`
 - rebuilds on changes to Go, templ, CSS, JS, embedded word pack text, SVG, and the self-host script itself
-- restarts the app automatically after a successful rebuild
-- ignores generated `*_templ.go` outputs so the watcher does not rebuild-loop on its own generated files
+- restarts the app automatically after a successful rebuild and keeps the last good app running on build failure
+- ignores generated `*_templ.go` outputs so templ generation does not rebuild-loop on its own generated files
+- enables browser auto-reload through Air's proxy
 - stops any running `start` or `dev-start` session first
 
 ### `stop`

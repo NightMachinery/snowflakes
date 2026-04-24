@@ -10,19 +10,20 @@ ENV_PATH="$STATE_DIR/app.env"
 STATE_PATH="$STATE_DIR/state.env"
 LOG_PATH="$LOG_DIR/snowflakes.log"
 DEV_LOG_PATH="$LOG_DIR/snowflakes-dev.log"
+AIR_CONFIG_PATH="$ROOT_DIR/.air.toml"
 CADDYFILE="$HOME/Caddyfile"
 SESSION_NAME="snowflakes-self-host"
 DEV_SESSION_NAME="snowflakes-self-host-dev"
 DEFAULT_PUBLIC_URL="http://justone.pinky.lilf.ir"
 APP_HOST="127.0.0.1"
 APP_PORT="3400"
+DEV_PROXY_PORT="3401"
 CADDY_BEGIN="# BEGIN snowflakes self-host"
 CADDY_END="# END snowflakes self-host"
 
 PUBLIC_URL=""
 SITE_ADDRESS=""
 WORDPACK_DIR="${SNOWFLAKES_WORDPACK_DIR:-$HOME/.snowflakes/wordpacks}"
-DEV_CHILD_PID=""
 
 tmuxnew () {
 	tmux kill-session -t "$1" &> /dev/null || true
@@ -44,6 +45,7 @@ Usage:
 
 Default public URL: $DEFAULT_PUBLIC_URL
 Internal bind:      http://$APP_HOST:$APP_PORT
+Dev proxy bind:     http://$APP_HOST:$DEV_PROXY_PORT
 USAGE
 }
 
@@ -92,7 +94,7 @@ parse_public_url() {
 }
 
 ensure_dirs() {
-	mkdir -p "$BIN_DIR" "$LOG_DIR" "$WORDPACK_DIR"
+	mkdir -p "$BIN_DIR" "$LOG_DIR" "$WORDPACK_DIR" "$ROOT_DIR/tmp"
 }
 
 write_env() {
@@ -168,18 +170,20 @@ build_binary() {
 }
 
 render_caddy_block() {
+	local target_port="$1"
 	cat <<EOF_BLOCK
 $SITE_ADDRESS {
     encode zstd gzip
-    reverse_proxy $APP_HOST:$APP_PORT
+    reverse_proxy $APP_HOST:$target_port
 }
 EOF_BLOCK
 }
 
 write_caddy_block() {
+	local target_port="$1"
 	local block_file
 	block_file="$(mktemp)"
-	render_caddy_block > "$block_file"
+	render_caddy_block "$target_port" > "$block_file"
 	python3 - "$CADDYFILE" "$block_file" "$CADDY_BEGIN" "$CADDY_END" <<'PY'
 from pathlib import Path
 import sys
@@ -221,102 +225,17 @@ start_app() {
 	stop_all_sessions
 	note "Starting tmux session $SESSION_NAME"
 	local cmd
-	cmd="set -euo pipefail; source ${(q)ENV_PATH}; exec ${(q)BIN_PATH} >> ${(q)LOG_PATH} 2>&1"
+	cmd="set -euo pipefail; set -a; source ${(q)ENV_PATH}; set +a; exec ${(q)BIN_PATH} >> ${(q)LOG_PATH} 2>&1"
 	tmuxnew "$SESSION_NAME" zsh -lc "$cmd"
-}
-
-watch_signature() {
-	python3 - "$ROOT_DIR" <<'PY'
-from pathlib import Path
-import hashlib
-import sys
-
-root = Path(sys.argv[1])
-targets = []
-for rel in ("go.mod", "go.sum", "self_host.zsh"):
-    path = root / rel
-    if path.exists():
-        targets.append(path)
-
-for base in (root / "cmd", root / "internal"):
-    if not base.exists():
-        continue
-    for path in sorted(base.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.suffix not in {".go", ".templ", ".css", ".js", ".txt", ".svg"}:
-            continue
-        if path.name.endswith("_templ.go"):
-            continue
-        targets.append(path)
-
-digest = hashlib.sha256()
-for path in targets:
-    stat = path.stat()
-    digest.update(str(path.relative_to(root)).encode())
-    digest.update(str(stat.st_mtime_ns).encode())
-    digest.update(str(stat.st_size).encode())
-
-print(digest.hexdigest())
-PY
-}
-
-stop_dev_child() {
-	if [[ -n "${DEV_CHILD_PID:-}" ]]; then
-		kill "$DEV_CHILD_PID" &>/dev/null || true
-		wait "$DEV_CHILD_PID" 2>/dev/null || true
-		DEV_CHILD_PID=""
-	fi
-}
-
-start_dev_child() {
-	note "Launching development app"
-	zsh -lc "source ${(q)ENV_PATH}; exec ${(q)BIN_PATH} >> ${(q)LOG_PATH} 2>&1" &
-	DEV_CHILD_PID=$!
-}
-
-rebuild_and_restart_dev() {
-	note "Detected source changes; rebuilding for development"
-	if build_binary; then
-		write_env
-		stop_dev_child
-		start_dev_child
-		note "Development app running at $PUBLIC_URL"
-	else
-		note "Build failed; keeping the previous app process running"
-	fi
-}
-
-run_dev_loop() {
-	load_state
-	parse_public_url "$PUBLIC_URL"
-	ensure_dirs
-	write_env
-
-	trap 'stop_dev_child; exit 0' INT TERM EXIT
-
-	rebuild_and_restart_dev
-
-	local current_signature next_signature
-	current_signature="$(watch_signature)"
-	note "Watching for source changes"
-
-	while true; do
-		sleep 1
-		next_signature="$(watch_signature)"
-		if [[ "$next_signature" != "$current_signature" ]]; then
-			rebuild_and_restart_dev
-			current_signature="$(watch_signature)"
-		fi
-	done
 }
 
 start_dev_session() {
 	ensure_dirs
+	[[ -f "$AIR_CONFIG_PATH" ]] || die "Missing $AIR_CONFIG_PATH."
 	stop_all_sessions
 	note "Starting tmux session $DEV_SESSION_NAME"
 	local cmd
-	cmd="set -euo pipefail; exec ${(q)ROOT_DIR}/self_host.zsh __dev-loop >> ${(q)DEV_LOG_PATH} 2>&1"
+	cmd="set -euo pipefail; cd ${(q)ROOT_DIR}; set -a; source ${(q)ENV_PATH}; set +a; exec go tool air -c ${(q)AIR_CONFIG_PATH} >> ${(q)DEV_LOG_PATH} 2>&1"
 	tmuxnew "$DEV_SESSION_NAME" zsh -lc "$cmd"
 }
 
@@ -327,7 +246,7 @@ setup_cmd() {
 	write_state
 	build_binary
 	write_env
-	write_caddy_block
+	write_caddy_block "$APP_PORT"
 	reload_caddy
 	start_app
 	note "Snowflakes available at $PUBLIC_URL"
@@ -345,7 +264,7 @@ redeploy_cmd() {
 	write_state
 	build_binary
 	write_env
-	write_caddy_block
+	write_caddy_block "$APP_PORT"
 	reload_caddy
 	start_app
 	note "Redeployed Snowflakes at $PUBLIC_URL"
@@ -355,6 +274,8 @@ start_cmd() {
 	load_state
 	parse_public_url "$PUBLIC_URL"
 	write_env
+	write_caddy_block "$APP_PORT"
+	reload_caddy
 	start_app
 	note "Started Snowflakes at $PUBLIC_URL"
 }
@@ -370,10 +291,10 @@ dev_start_cmd() {
 	ensure_dirs
 	write_state
 	write_env
-	write_caddy_block
+	write_caddy_block "$DEV_PROXY_PORT"
 	reload_caddy
 	start_dev_session
-	note "Development Snowflakes available at $PUBLIC_URL"
+	note "Development Snowflakes available at $PUBLIC_URL via Air proxy on $APP_HOST:$DEV_PROXY_PORT"
 }
 
 stop_cmd() {
@@ -401,6 +322,8 @@ main() {
 			;;
 		start)
 			require_command tmux
+			require_command caddy
+			require_command python3
 			start_cmd
 			;;
 		dev-start)
@@ -414,12 +337,6 @@ main() {
 		stop)
 			require_command tmux
 			stop_cmd
-			;;
-		__dev-loop)
-			require_command go
-			require_command templ
-			require_command python3
-			run_dev_loop
 			;;
 		*)
 			usage

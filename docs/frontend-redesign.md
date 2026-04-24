@@ -57,6 +57,7 @@ Those references drove the implemented design system: dark winter-night backdrop
 - Added `./self_host.zsh dev-start [public-url]` for tmux-managed development rebuilds.
 - Made `setup`, `redeploy`, `start`, `dev-start`, and `stop` coordinate so `start` and `dev-start` cleanly replace each other instead of overlapping.
 - Fixed the initial watcher bug where generated `*_templ.go` files caused rebuild loops.
+- Switched `dev-start` from the custom polling watcher to an Air-backed live-reload session while keeping tmux/Caddy/state management in the wrapper script.
 
 ## Verification (2026-04-24)
 - `./self_host.zsh dev-start http://justone.pinky.lilf.ir`
