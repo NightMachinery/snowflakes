@@ -49,6 +49,8 @@ type ParticipantView struct {
 	PendingRole     string
 	IsViewer        bool
 	RoundController bool
+	ActiveGuesser   bool
+	NeedsClues      bool
 }
 
 type SettingsView struct {
@@ -71,6 +73,8 @@ type RoundView struct {
 	CanSeeChoiceWords bool
 	CanSeeCardPool    bool
 	CanManageRound    bool
+	CanSeeReviewClues bool
+	CanRevealClues    bool
 	CardPool          []string
 	ChoiceSlate       []ChoiceView
 	EligibleCluegiver bool
@@ -142,13 +146,27 @@ func (a *App) buildRoomView(room *Room, viewerToken string) RoomView {
 	participants := make([]ParticipantView, 0, len(room.Participants))
 	playerCount, observerCount := 0, 0
 	roundControllerTokens := map[string]bool{}
+	activeGuesserTokens := map[string]bool{}
+	needsClueTokens := map[string]bool{}
 	if round := room.round(); round != nil {
 		for _, token := range room.roundControllers(round) {
 			roundControllerTokens[token] = true
 		}
+		if round.Phase != PhaseResolved {
+			for _, token := range room.activeGuessers(round) {
+				activeGuesserTokens[token] = true
+			}
+		}
+		if round.Phase == PhaseClueEntry {
+			for _, token := range room.eligibleCluegivers(round) {
+				if !room.cluegiverSubmittedAll(round, token) {
+					needsClueTokens[token] = true
+				}
+			}
+		}
 	}
 	for _, p := range room.Participants {
-		pv := ParticipantView{Token: p.Token, Name: p.Name, Role: string(p.Role), Admin: p.Admin, Creator: p.Creator, IsViewer: p.Token == viewerToken, RoundController: roundControllerTokens[p.Token]}
+		pv := ParticipantView{Token: p.Token, Name: p.Name, Role: string(p.Role), Admin: p.Admin, Creator: p.Creator, IsViewer: p.Token == viewerToken, RoundController: roundControllerTokens[p.Token], ActiveGuesser: activeGuesserTokens[p.Token], NeedsClues: needsClueTokens[p.Token]}
 		if p.PendingRole != nil {
 			pv.PendingRole = string(*p.PendingRole)
 		}
@@ -230,6 +248,8 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 	canManageRound := r.canManageRound(round, viewerToken)
 	isCluegiver := slicesContains(cluegivers, viewerToken)
 	isActiveGuesser := slicesContains(guessers, viewerToken)
+	canSeeReviewClues := round.Phase != PhaseClueReview || (!isActiveGuesser && (canManageRound || isCluegiver))
+	canRevealClues := canManageRound && !isActiveGuesser
 	canSeeChoiceWords := round.Phase == PhaseResolved || canManageRound || isCluegiver
 	canSeeTarget := round.Phase == PhaseResolved
 	if round.TargetWord != "" && (canManageRound || isCluegiver) {
@@ -258,6 +278,9 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 		clueEntries = append(clueEntries, ClueEntryFieldView{Slot: slot, Text: text, Submitted: submitted})
 	}
 	for key, clue := range round.Clues {
+		if round.Phase == PhaseClueReview && !canSeeReviewClues {
+			continue
+		}
 		name := clue.PlayerToken
 		if p := r.Participants[clue.PlayerToken]; p != nil {
 			name = p.Name
@@ -276,7 +299,7 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 			SubmittedByYou: clue.PlayerToken == viewerToken,
 		}
 		clues = append(clues, cv)
-		if !invalid[key] {
+		if !invalid[key] && (round.Phase == PhaseGuessEntry || round.Phase == PhaseResolved || canSeeReviewClues) {
 			validClues = append(validClues, clue.Text)
 		}
 	}
@@ -304,6 +327,8 @@ func (r *Room) roundViewLocked(viewerToken string) *RoundView {
 		CanSeeChoiceWords: canSeeChoiceWords,
 		CanSeeCardPool:    canSeeCardPool,
 		CanManageRound:    canManageRound,
+		CanSeeReviewClues: canSeeReviewClues,
+		CanRevealClues:    canRevealClues,
 		CardPool:          append([]string{}, round.Card.Pool...),
 		ChoiceSlate:       choices,
 		EligibleCluegiver: isCluegiver,

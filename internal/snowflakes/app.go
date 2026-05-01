@@ -812,6 +812,7 @@ func (r *Room) handleImmediateObserverChange(round *Round, token string) error {
 	r.pruneParticipantFromRound(round, token)
 	r.ensureRoundController(round)
 	if r.roundStillValid(round) {
+		r.advanceToReviewIfAllCluesSubmitted(round)
 		return nil
 	}
 	if len(r.playerOrder()) < 2 {
@@ -943,27 +944,30 @@ func (r *Room) submitClues(token string, texts []string) error {
 	for slot := 1; slot <= maxSlots; slot++ {
 		round.Clues[clueKey(token, slot)] = ClueSubmission{PlayerToken: token, Slot: slot, Text: normalized[slot-1]}
 	}
-	if r.allCluesSubmitted(round) {
-		round.Phase = PhaseClueReview
-	}
+	r.advanceToReviewIfAllCluesSubmitted(round)
 	return nil
+}
+
+func (r *Room) cluegiverSubmittedAll(round *Round, token string) bool {
+	if round == nil || token == "" {
+		return false
+	}
+	slots := r.effectiveClueSlots(round)
+	for slot := 1; slot <= slots; slot++ {
+		if _, ok := round.Clues[clueKey(token, slot)]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Room) submittedCluegiverCount(round *Round) int {
 	if round == nil {
 		return 0
 	}
-	slots := r.effectiveClueSlots(round)
 	completed := 0
 	for _, token := range r.eligibleCluegivers(round) {
-		complete := true
-		for slot := 1; slot <= slots; slot++ {
-			if _, ok := round.Clues[clueKey(token, slot)]; !ok {
-				complete = false
-				break
-			}
-		}
-		if complete {
+		if r.cluegiverSubmittedAll(round, token) {
 			completed++
 		}
 	}
@@ -973,6 +977,12 @@ func (r *Room) submittedCluegiverCount(round *Round) int {
 func (r *Room) allCluesSubmitted(round *Round) bool {
 	total := len(r.eligibleCluegivers(round))
 	return total > 0 && r.submittedCluegiverCount(round) == total
+}
+
+func (r *Room) advanceToReviewIfAllCluesSubmitted(round *Round) {
+	if round != nil && round.Phase == PhaseClueEntry && r.allCluesSubmitted(round) {
+		round.Phase = PhaseClueReview
+	}
 }
 
 func (r *Room) advanceToReview(requester string) error {
@@ -992,8 +1002,8 @@ func (r *Room) advanceToReview(requester string) error {
 
 func (r *Room) toggleManualInvalid(requester, key string) error {
 	round := r.round()
-	if !r.canManageRound(round, requester) {
-		return errors.New("round controller required")
+	if !r.canManageRound(round, requester) || r.isActiveGuesser(round, requester) {
+		return errors.New("non-guessing round controller required")
 	}
 	if round == nil || round.Phase != PhaseClueReview {
 		return errors.New("not in clue review")
@@ -1010,8 +1020,8 @@ func (r *Room) toggleManualInvalid(requester, key string) error {
 
 func (r *Room) advanceToGuess(requester string) error {
 	round := r.round()
-	if !r.canManageRound(round, requester) {
-		return errors.New("round controller required")
+	if !r.canManageRound(round, requester) || r.isActiveGuesser(round, requester) {
+		return errors.New("non-guessing round controller required")
 	}
 	if round == nil || round.Phase != PhaseClueReview {
 		return errors.New("not in clue review")

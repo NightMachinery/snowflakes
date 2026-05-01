@@ -1388,3 +1388,25 @@ select {
     padding: 0.5rem 0.2rem;
   }
 }
+
+.badge--round {
+  border-color: rgba(160, 223, 255, 0.26);
+  padding-inline: 0.72rem;
+}
+
+.badge--guesser {
+  color: #dff8ff;
+  background: linear-gradient(135deg, rgba(85, 205, 255, 0.2), rgba(139, 130, 255, 0.14));
+}
+
+.badge--needs-clues {
+  color: #fff1d4;
+  background: linear-gradient(135deg, rgba(243, 184, 79, 0.22), rgba(255, 134, 122, 0.12));
+}
+
+.badge-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  fill: currentColor;
+}

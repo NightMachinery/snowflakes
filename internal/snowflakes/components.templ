@@ -330,9 +330,10 @@ templ roomInner(view RoomView) {
 								<p class="lead">Waiting for clue-givers to finish submitting clues.</p>
 							}
 						} else if view.Round.Phase == "clue_review" {
-							<p class="lead">Review duplicates and any manually invalid clues before the guessers see them.</p>
-							<ul class="clues-list">
-								for _, clue := range view.Round.Clues {
+							if view.Round.CanSeeReviewClues {
+								<p class="lead">Review duplicates and any manually invalid clues before the guessers see them.</p>
+								<ul class="clues-list">
+									for _, clue := range view.Round.Clues {
 									<li
 										if clue.Invalid {
 											class="clue-item invalid"
@@ -365,8 +366,11 @@ templ roomInner(view RoomView) {
 										}
 									</li>
 								}
-							</ul>
-							if view.Round.CanManageRound {
+								</ul>
+							} else {
+								<p class="lead">Stay blind while the round controller reviews the clues.</p>
+							}
+							if view.Round.CanRevealClues {
 								<form method="post" action={ roomActionPath(view.Code, "guess-phase") } data-ajax="true">
 									<button type="submit">Reveal valid clues</button>
 								</form>
@@ -455,6 +459,18 @@ templ roomInner(view RoomView) {
 												<span class="badge badge--violet">{ participant.Role }</span>
 												if participant.PendingRole != "" {
 													<span class="badge badge--gold">next: { participant.PendingRole }</span>
+												}
+												if participant.ActiveGuesser {
+													<span class="badge badge--round badge--guesser" aria-label="Active guesser" title="Active guesser">
+														<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.25c4.75 0 8.38 4.13 9.42 7.08a1.9 1.9 0 0 1 0 1.34c-1.04 2.95-4.67 7.08-9.42 7.08s-8.38-4.13-9.42-7.08a1.9 1.9 0 0 1 0-1.34C3.62 8.38 7.25 4.25 12 4.25Zm0 4.1a3.65 3.65 0 1 0 0 7.3 3.65 3.65 0 0 0 0-7.3Zm0 2.1a1.55 1.55 0 1 1 0 3.1 1.55 1.55 0 0 1 0-3.1Z"></path></svg>
+														guesser
+													</span>
+												}
+												if participant.NeedsClues {
+													<span class="badge badge--round badge--needs-clues" aria-label="Needs to submit clues" title="Needs to submit clues">
+														<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3.75h9a2 2 0 0 1 2 2v12.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2V5.75a2 2 0 0 1 2-2Zm1.25 4.1h6.5v-1.7h-6.5v1.7Zm0 4.1h6.5v-1.7h-6.5v1.7Zm0 4.1h4.25v-1.7H8.75v1.7Zm6.88-1.08 1.18 1.18 3.12-3.12-1.18-1.18-1.94 1.94-.72-.72-1.18 1.18Z"></path></svg>
+														needs clues
+													</span>
 												}
 											</div>
 										</div>

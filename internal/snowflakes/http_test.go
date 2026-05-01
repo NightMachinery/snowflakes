@@ -296,6 +296,53 @@ func TestClueReviewHidesDuplicateToggleButtons(t *testing.T) {
 	assertNotContainsAny(t, cluegiverBody, ">Restore</button>", ">Toggle invalid</button>", "Reveal valid clues")
 }
 
+func TestParticipantListShowsCurrentRoundBadges(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueEntry
+		round.TargetIndex = 1
+		round.TargetWord = "Pear"
+	})
+
+	rr := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	body := rr.Body.String()
+	assertContainsAll(t, body, "aria-label=\"Active guesser\"", "aria-label=\"Needs to submit clues\"", "guesser", "needs clues")
+	assertContainsCount(t, body, "aria-label=\"Active guesser\"", 1)
+	assertContainsCount(t, body, "aria-label=\"Needs to submit clues\"", 2)
+
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueEntry
+		round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "orchard"}
+		round.Clues[clueKey(bobToken, 2)] = ClueSubmission{PlayerToken: bobToken, Slot: 2, Text: "green"}
+	})
+
+	rr = performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	assertContainsCount(t, rr.Body.String(), "aria-label=\"Needs to submit clues\"", 1)
+}
+
+func TestClueReviewKeepsActiveGuesserBlindEvenIfController(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+	room.mu.Lock()
+	round := room.Game.CurrentRound
+	round.Phase = PhaseClueReview
+	round.TargetIndex = 1
+	round.TargetWord = "Pear"
+	round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "SecretOrchard"}
+	round.Clues[clueKey(caraToken, 1)] = ClueSubmission{PlayerToken: caraToken, Slot: 1, Text: "SecretOrchard"}
+	round.RoundControllerTokens = []string{aliceToken, bobToken}
+	room.mu.Unlock()
+
+	guesserRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", aliceToken, nil, nil)
+	guesserBody := guesserRR.Body.String()
+	assertContainsAll(t, guesserBody, "Stay blind while the round controller reviews the clues.")
+	assertNotContainsAny(t, guesserBody, "SecretOrchard", "duplicate", ">Toggle invalid</button>", ">Restore</button>", "Reveal valid clues")
+
+	controllerRR := performRequest(t, app.Handler(), http.MethodGet, "/rooms/"+room.Code+"/fragment", bobToken, nil, nil)
+	assertContainsAll(t, controllerRR.Body.String(), "SecretOrchard", "duplicate", "Reveal valid clues")
+}
+
 func TestParticipantListShowsRoundControllerIcon(t *testing.T) {
 	app := newTestApp(t)
 	room := newRoundTestRoom(t, app)

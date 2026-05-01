@@ -266,6 +266,24 @@ func TestAdminGuesserLosesHiddenInfoAndRoundControls(t *testing.T) {
 	}
 }
 
+func TestActiveGuesserControllerCannotRevealReviewClues(t *testing.T) {
+	room := newPermissionTestRoom()
+	round := room.Game.CurrentRound
+	round.Phase = PhaseClueReview
+	round.RoundControllerTokens = []string{"a", "b"}
+	round.Clues[clueKey("b", 1)] = ClueSubmission{PlayerToken: "b", Slot: 1, Text: "orchard"}
+
+	if err := room.advanceToGuess("a"); err == nil {
+		t.Fatal("expected active guesser controller to be blocked from revealing clues")
+	}
+	if got := round.Phase; got != PhaseClueReview {
+		t.Fatalf("expected round to remain in review, got %s", got)
+	}
+	if err := room.advanceToGuess("b"); err != nil {
+		t.Fatalf("expected non-guessing controller to reveal clues: %v", err)
+	}
+}
+
 func TestTemporaryRoundControllerCanManageRound(t *testing.T) {
 	room := newPermissionTestRoom()
 	room.Settings.WordSelectionMode = SelectionAdminPick
@@ -373,6 +391,31 @@ func TestMakingRoundControllerObserverHandsOffToNextCluegiver(t *testing.T) {
 		}
 		if room.canManageRound(room.Game.CurrentRound, bobToken) {
 			t.Fatal("did not expect removed controller to keep round controls")
+		}
+	})
+}
+
+func TestMakingIncompleteCluegiverObserverAdvancesWhenRemainingCluesComplete(t *testing.T) {
+	app := newTestApp(t)
+	room := newRoundTestRoom(t, app)
+
+	withRoomLock(t, room, func(room *Room, round *Round) {
+		round.Phase = PhaseClueEntry
+		round.TargetWord = "Pear"
+		round.Clues[clueKey(bobToken, 1)] = ClueSubmission{PlayerToken: bobToken, Slot: 1, Text: "orchard"}
+		round.Clues[clueKey(bobToken, 2)] = ClueSubmission{PlayerToken: bobToken, Slot: 2, Text: "green"}
+
+		if err := room.setParticipantRole(aliceToken, caraToken, RoleObserver); err != nil {
+			t.Fatalf("expected observer change to succeed: %v", err)
+		}
+		if room.Game.Status != GameRunning {
+			t.Fatalf("expected game to keep running, got %s", room.Game.Status)
+		}
+		if got := room.Game.CurrentRound.Phase; got != PhaseClueReview {
+			t.Fatalf("expected remaining complete clues to advance to review, got %s", got)
+		}
+		if got := room.submittedCluegiverCount(room.Game.CurrentRound); got != 1 {
+			t.Fatalf("expected only Bob to remain complete, got %d", got)
 		}
 	})
 }
